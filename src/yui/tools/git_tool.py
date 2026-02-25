@@ -1,6 +1,7 @@
 """Safe git operations tool."""
 
 import logging
+import shlex
 import subprocess
 
 from strands import tool
@@ -51,7 +52,7 @@ def git_tool(subcommand: str, args: str = "", working_directory: str = ".") -> s
         if pattern in full_cmd:
             return f"Error: Blocked git operation: {pattern}"
 
-    cmd = ["git", subcommand] + (args.split() if args else [])
+    cmd = ["git", subcommand] + (shlex.split(args) if args else [])
 
     try:
         result = subprocess.run(
