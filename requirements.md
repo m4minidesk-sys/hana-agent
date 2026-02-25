@@ -1,7 +1,7 @@
 # Yui — Requirements Document
 
 > Lightweight, AWS-optimized AI agent orchestrator inspired by OpenClaw.
-> Version: 0.5.0-draft | Last updated: 2026-02-25 | Reviewed by: Kiro CLI (v1.26.2, 2 rounds) + han feedback
+> Version: 0.6.0-draft | Last updated: 2026-02-25 | Reviewed by: Kiro CLI (v1.26.2, 3 rounds) + han feedback
 
 ---
 
@@ -29,7 +29,7 @@ AWS corporate engineers who need a local AI coding assistant that:
 | Criteria | Target |
 |---|---|
 | Install size | <50MB (vs OpenClaw's 300MB+) |
-| Python dependencies | ≤10 packages |
+| Python dependencies | ≤10 packages (core), ≤13 with optional features (meeting) |
 | Time to first working agent | <10 minutes |
 | Bedrock Converse API latency overhead | <100ms over raw API call |
 | Test coverage | >80% for core modules |
@@ -44,7 +44,8 @@ AWS corporate engineers who need a local AI coding assistant that:
 |---|---|
 | Phase 0 | CLI REPL + Bedrock Converse + exec/file tools + AGENTS.md/SOUL.md config loading |
 | Phase 1 | Slack Socket Mode adapter + SQLite session management + session compaction |
-| Phase 2 | Kiro CLI delegation tool + git tool + AgentCore Browser Tool + AgentCore Memory + **Meeting Transcription & Minutes (Whisper + Bedrock)** |
+| Phase 2 | Kiro CLI delegation tool + git tool + AgentCore Browser Tool + AgentCore Memory |
+| Phase 2.5 | **Meeting Transcription & Minutes** (Whisper + Bedrock) — standalone feature, does not block Phase 3 |
 | Phase 3 | Bedrock Guardrails integration + Heartbeat scheduler + launchd daemon (macOS) |
 
 ### 2.2 Out of scope (explicit exclusions)
@@ -334,6 +335,14 @@ SQLite handles ephemeral session data. AgentCore Memory handles durable knowledg
 | `kiro_delegate` | Delegate coding tasks to Kiro CLI | `subprocess.run(["kiro-cli", "chat", "--no-interactive", ...])`, ANSI strip, timeout 300s, **output truncated at 50,000 chars**. **Kiro CLI must be installed** — Yui checks at startup and provides install instructions if missing |
 | `git_tool` | Git operations (status, add, commit, push, log, diff, branch, checkout) | Wrapper around `subprocess.run(["git", ...])` with allowlisted subcommands |
 
+### 4.10.1 Meeting Tools (Phase 2)
+
+| Tool | Input | Output | Notes |
+|---|---|---|---|
+| `meeting_recorder` | `action: "start"\|"stop"\|"status"`, `include_mic: bool`, `output_dir: str` | `{status: str, meeting_id: str, duration_seconds: float, word_count: int}` | Starts/stops audio capture + Whisper pipeline. Only one recording active at a time (E-18). |
+| `whisper_transcribe` | `audio_path: str`, `language: str\|"auto"`, `model: str` | `{text: str, segments: [{start: float, end: float, text: str}], language_detected: str}` | Offline transcription of saved audio file. Used for re-transcription (`yui meeting transcribe <id>`). |
+| `meeting_analyzer` | `transcript: str`, `analysis_type: "realtime"\|"minutes"` | `{summary: str, action_items: [{action, owner, due_date}], decisions: [str], open_questions: [str]}` | Calls Bedrock Converse API with meeting-specific prompt template. |
+
 ### 4.11 Tool security model
 
 - **Shell execution**: strands-agents-tools `shell` tool has built-in user confirmation. Yui config adds an allowlist with subcommand granularity (e.g., `"git status"`, `"git log"`, `"git diff"` — not bare `"git"`) and a blocklist (e.g., `["rm -rf /", "sudo", "curl | bash", "git push --force", "git reset --hard", "git clean -f"]`). Remove bare `git` from shell allowlist; use dedicated `git_tool` for safe git operations.
@@ -480,7 +489,7 @@ mcp:
       enabled: true
   dynamic:
     enabled: true
-    allowlist: []                   # Optional: restrict dynamic MCP connections
+    allowlist: []                   # Empty = allow all. To restrict: ['aws-*', 'corporate-*']
   browser:
     provider: agentcore             # "agentcore" (default, cloud) or "local" (fallback)
     region: us-east-1
@@ -594,23 +603,31 @@ Yui provides automatic meeting transcription, intelligent minute generation, and
 | **Cost** | Free (local compute) | $0.024/min (~$1.44/hr meeting) |
 | **Latency** | ~0.5s on Apple Silicon | ~1-2s (network round-trip) |
 | **Offline** | Works without internet | Requires internet |
-| **Accuracy (WER)** | ~4-5% (large-v3-turbo) | ~18-22% |
+| **Accuracy (WER)** | ~8-12% (large-v3-turbo, varies by domain/noise) | ~5-8% (English), ~10-15% (Japanese) |
 | **Speaker diarization** | Requires pyannote (optional) | Built-in |
 | **Japanese** | Excellent (trained on multilingual data) | Good |
 
-**Decision: Whisper local is default.** Amazon Transcribe is available as opt-in fallback for speaker diarization or when local compute is constrained.
+**Decision: Whisper local is default.** Primary advantages: privacy (audio never leaves device), zero cost, and offline capability. Amazon Transcribe may have better accuracy in some enterprise scenarios but comes with per-minute cost and requires network. Available as opt-in fallback via `meeting.transcribe.provider: aws_transcribe`.
 
 ### 9.5.3 Audio Capture (macOS)
 
 **Primary method: ScreenCaptureKit** (macOS 13+)
-- Captures system audio directly (no virtual audio driver needed)
+- Captures system audio directly via `SCStreamConfiguration.capturesAudio = true` (Apple WWDC22, confirmed API)
+- No virtual audio driver needed
 - Requires Screen Recording permission in System Preferences
-- Can capture specific app audio (e.g., Zoom/Teams only)
+- Can capture specific app audio (e.g., Zoom/Teams only) via `SCContentFilter`
+- ⚠️ **Known issue**: PyObjC bridge on macOS 15 has reported stability issues with ScreenCaptureKit audio (GitHub pyobjc#647). Monitor and test.
+- Implementation: Swift helper binary or PyObjC bridge
 
-**Fallback: BlackHole virtual audio driver**
-- For macOS <13 or permission issues
+**Fallback: BlackHole virtual audio driver** (recommended if ScreenCaptureKit is unstable)
+- For macOS <13, or if ScreenCaptureKit audio is unreliable
 - Requires `brew install blackhole-2ch` + Audio MIDI Setup configuration
 - Creates loopback device combining system audio + mic
+- More mature, widely documented approach
+
+**Audio mixing (mic + system audio):**
+- `sounddevice` with multiple input streams combined via `numpy.add()`
+- Resampling to 16kHz mono via `scipy.signal.resample` or `librosa`
 
 **Audio pipeline:**
 ```
@@ -635,8 +652,10 @@ meeting:
     vad_enabled: true                 # Voice Activity Detection — skip silence
   analysis:
     provider: bedrock                 # Bedrock Converse for LLM analysis
-    realtime_enabled: true            # Enable real-time analysis during meeting
-    realtime_interval_seconds: 60     # Analyze every 60 seconds
+    realtime_enabled: false            # ⚠️ Default OFF — enables real-time analysis during meeting (costs ~$0.90/hr)
+    realtime_interval_seconds: 60     # Analyze every 60 seconds (when enabled)
+    realtime_window_minutes: 5        # Sliding window: last N minutes of transcript sent to LLM
+    max_cost_per_meeting_usd: 2.0     # Budget guard: stop real-time analysis if projected cost exceeds limit
     minutes_auto_generate: true       # Auto-generate minutes when meeting ends
   output:
     transcript_dir: ~/.yui/meetings/  # Save transcripts here
@@ -685,8 +704,8 @@ When the meeting recording stops, Yui automatically generates structured minutes
 **Minutes template (Bedrock LLM prompt):**
 ```markdown
 # Meeting Minutes — {date} {time}
-## Attendees
-(Identified from transcript if speaker diarization available, otherwise "Participants")
+## Participants
+(Speaker identification requires diarization — see Phase 4+ roadmap. Until then, speakers are not individually identified.)
 
 ## Summary
 (2-3 paragraph executive summary)
@@ -716,7 +735,7 @@ When the meeting recording stops, Yui automatically generates structured minutes
 2. Full transcript assembled from chunks
 3. Bedrock Converse API: Generate structured minutes (using Claude)
 4. Minutes saved to `~/.yui/meetings/<meeting_id>/minutes.md`
-5. If `slack_notify: true` → Post summary to Slack channel
+5. If `slack_notify: true` → Post summary to Slack channel (tables converted to plain text for Slack mrkdwn compatibility)
 6. If `outlook_mcp` available → Create follow-up calendar events for action items
 
 ### 9.5.7 Speaker Diarization (optional)
@@ -755,12 +774,12 @@ yui meeting stop                     # Stop recording
 
 yui meeting list                     # List past meetings
 yui meeting show <id>                # Show transcript + minutes
-yui meeting search "keyword"         # Search across meeting transcripts
+yui meeting search "keyword"         # Search across meeting transcripts (SQLite FTS5 full-text index)
 ```
 
 ### 9.5.9 Privacy & Security
 
-- **Audio stays local**: Raw audio is processed by Whisper on-device. Never uploaded to cloud.
+- **Audio stays local** (default): When using Whisper (default), raw audio is processed on-device and never uploaded. If using Amazon Transcribe (opt-in via `meeting.transcribe.provider: aws_transcribe`), audio is streamed to AWS.
 - **Text to Bedrock**: Only text transcripts are sent to Bedrock for analysis (within AWS VPC).
 - **Meeting files**: Stored locally at `~/.yui/meetings/` with permission 700.
 - **Retention**: Configurable auto-delete after N days (`meeting.retention_days: 90`).
@@ -770,14 +789,29 @@ yui meeting search "keyword"         # Search across meeting transcripts
 
 | Package | Purpose | License | Phase |
 |---|---|---|---|
-| `mlx-whisper` | Whisper inference on Apple Silicon | MIT | Phase 2 |
-| `pyaudio` or `sounddevice` | Audio capture from system/mic | MIT | Phase 2 |
-| `numpy` | Audio buffer processing | BSD | Phase 2 |
+| `mlx-whisper` | Whisper inference on Apple Silicon | MIT | Phase 2.5 |
+| `sounddevice` | Audio capture from system/mic (preferred over pyaudio — no C dependency issues on macOS) | MIT | Phase 2.5 |
+| `numpy` | Audio buffer processing | BSD | Phase 2.5 |
+
+### 9.5.11 Meeting App Compatibility
+
+| App | Audio Capture | Known Issues |
+|---|---|---|
+| **Amazon Chime** | ✅ Supported | Standard audio routing |
+| **Zoom** | ✅ Supported | May need "Share Computer Sound" enabled in Zoom settings for ScreenCaptureKit. BlackHole works without extra config. |
+| **Microsoft Teams** | ✅ Supported | Standard audio routing |
+| **Google Meet** (browser) | ✅ Supported | Captures browser audio output |
+| **WebEx** | ⚠️ Untested | Expected to work via system audio capture |
+
+**Note**: Audio capture quality depends on system audio output settings. Headphone users may need to configure BlackHole as a multi-output device to capture audio while still hearing it.
 
 **Note**: These are **optional dependencies** — installed only when meeting feature is enabled. Core Yui works without them.
 
 ```toml
 # pyproject.toml
+[project.scripts]
+yui = "yui.__main__:main"
+
 [project.optional-dependencies]
 meeting = ["mlx-whisper>=0.4", "sounddevice>=0.5", "numpy>=1.26"]
 ```
@@ -791,6 +825,7 @@ meeting = ["mlx-whisper>=0.4", "sounddevice>=0.5", "numpy>=1.26"]
 - Environment variables loaded from `~/.yui/.env`
 - **Logging**: `~/.yui/logs/yui.log` with `RotatingFileHandler(maxBytes=10MB, backupCount=5)` (Kiro review m-03)
 - Control: `launchctl load/unload`, `yui daemon start/stop/status`
+- **Daily cleanup job** (3am): Delete meeting recordings older than `meeting.retention_days` (default: 90)
 
 ---
 
@@ -839,10 +874,11 @@ meeting = ["mlx-whisper>=0.4", "sounddevice>=0.5", "numpy>=1.26"]
 - [ ] AC-16: `git_tool` can run status, add, commit, push, log, diff
 - [ ] AC-17: AgentCore Browser Tool can fetch and extract web page content
 - [ ] AC-18: AgentCore Memory can store and retrieve memories across sessions
+- [ ] AC-18a: AgentCore Code Interpreter can execute Python code and return results
 - [ ] AC-19: Kiro CLI timeout (>300s) produces graceful error, not crash
 - [ ] AC-19a: Kiro CLI missing at startup → clear error with install instructions, exit code 1
 
-### Phase 2 — Meeting Transcription & Minutes
+### Phase 2.5 — Meeting Transcription & Minutes
 
 - [ ] AC-40: `yui meeting start` begins audio capture and Whisper transcription
 - [ ] AC-41: `yui meeting stop` stops recording and triggers auto-minutes generation
@@ -883,6 +919,8 @@ meeting = ["mlx-whisper>=0.4", "sounddevice>=0.5", "numpy>=1.26"]
 - [ ] AC-35: Context window exceeded → force compaction or archive session (E-12)
 - [ ] AC-36: MCP server connection failure → graceful degradation, agent continues (E-13)
 - [ ] AC-37: Kiro CLI missing at startup → exit with install instructions (E-07 revised)
+- [ ] AC-38: Meeting feature handles E-15 through E-20 gracefully (permission, model, device, duplicate, crash, HF token)
+- [ ] AC-39: Meeting app compatibility verified for Zoom, Teams, and Chime (AC from M-06)
 
 ---
 
@@ -908,6 +946,8 @@ meeting = ["mlx-whisper>=0.4", "sounddevice>=0.5", "numpy>=1.26"]
 | E-16 | Whisper model not found / download failed | User message: "Whisper model not available. Run `pip install yui-agent[meeting]` to install meeting dependencies." |
 | E-17 | Audio device not found (no mic / no system audio) | User message: "No audio input detected. Check microphone and system audio settings." |
 | E-18 | Meeting recording already active | User message: "A meeting is already being recorded. Use `yui meeting stop` first." |
+| E-19 | Whisper crash/OOM mid-meeting | Save raw audio buffer to `~/.yui/meetings/<id>/audio.wav`, log error, continue recording audio. User can re-transcribe later with `yui meeting transcribe <id>`. |
+| E-20 | pyannote HuggingFace token missing | User message: "Speaker diarization requires HuggingFace token. Set HF_TOKEN environment variable. Get token at https://huggingface.co/settings/tokens" |
 
 ---
 
@@ -926,6 +966,14 @@ meeting = ["mlx-whisper>=0.4", "sounddevice>=0.5", "numpy>=1.26"]
 | `mcp` | ≥1.0.0 | MCP protocol client (for MCP server integration) | MIT |
 
 **Total: 9 direct dependencies** (vs OpenClaw's 54)
+
+**Optional dependencies (meeting feature):**
+
+| Package | Version | Purpose | License |
+|---|---|---|---|
+| `mlx-whisper` | ≥0.4 | Whisper inference on Apple Silicon | MIT |
+| `sounddevice` | ≥0.5 | Audio capture | MIT |
+| `numpy` | ≥1.26 | Audio buffer processing | BSD |
 
 ---
 
@@ -966,3 +1014,4 @@ meeting = ["mlx-whisper>=0.4", "sounddevice>=0.5", "numpy>=1.26"]
 | 2026-02-25 | AYA | v0.3.0 — Local/Cloud boundary redesign per han's directive + Kiro round 2 review. Section 4 fully rewritten with 3-tier model. |
 | 2026-02-25 | AYA | v0.4.0 — han feedback incorporated: (①②③) AWS Bedrock features explicitly enumerated in Section 4.6. (④) Kiro CLI made required dependency with startup check; AGENTS.md ships with Kiro⇔Yui cross-review workflow. (⑤) Outlook tools replaced by aws-outlook-mcp corporate MCP server. (⑥) diagram/media tools replaced by MCP servers. New Section 4.4 for MCP integration. MCP config.yaml schema added. `mcp` package added as 9th dependency. E-13/E-14 error handling for MCP. AC-25a/b/c, AC-36/AC-37 added. |
 | 2026-02-25 | AYA | v0.5.0 — HANA→Yui rename (per han's naming decision). New Section 9.5: Meeting Transcription & Automatic Minutes (Whisper + Bedrock). Discovery: Whisper local vs Amazon Transcribe comparison, mlx-whisper as default engine, ScreenCaptureKit for audio capture, hybrid local/cloud architecture (audio local, LLM cloud). New tools: meeting_recorder, whisper_transcribe. CLI: yui meeting start/stop/status/list/search. Auto-minutes with Bedrock (summary, action items, decisions). Real-time analysis during meetings. Optional deps via pyproject.toml extras [meeting]. AC-40–51, E-15–18 added. |
+| 2026-02-25 | AYA | v0.6.0 — Kiro round 3 review: C-01 WER accuracy corrected (Whisper ~8-12%, Transcribe ~5-8%). C-02 ScreenCaptureKit confirmed capable of audio capture (capturesAudio API), but PyObjC stability note added + BlackHole fallback strengthened. C-03 `yui` console script added to pyproject.toml. C-04 realtime_enabled default→false, budget guard added. C-05 Meeting tool specs added (Section 4.10.1). M-01 Minutes template fixed (no attendees without diarization). M-02 pyaudio removed, sounddevice only. M-03 Whisper crash recovery (E-19). M-04 Privacy claim clarified for Transcribe opt-in. M-05 Meeting→Phase 2.5. M-06 Meeting app compatibility table added (Section 9.5.11). M-07 AgentCore Code Interpreter AC added. Minor: sliding window config, Slack mrkdwn note, FTS5 search, MCP allowlist docs, optional deps in Section 14, retention cleanup in daemon, test coverage clarification. |
