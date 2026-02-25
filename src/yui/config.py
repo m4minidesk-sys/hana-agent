@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import yaml
 
@@ -47,9 +47,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "timeout_seconds": 300,
         },
     },
+    "slack": {
+        "bot_token": "",
+        "app_token": "",
+    },
     "runtime": {
         "session": {
-            "compaction_threshold": 0.8,
+            "db_path": "~/.yui/sessions.db",
+            "compaction_threshold": 50,
             "keep_recent_messages": 5,
         },
     },
@@ -60,7 +65,7 @@ class ConfigError(Exception):
     """Raised when configuration is invalid."""
 
 
-def load_config(config_path: str | None = None) -> dict[str, Any]:
+def load_config(config_path: Optional[str] = None) -> dict[str, Any]:
     """Load config from ~/.yui/config.yaml with defaults.
 
     Args:

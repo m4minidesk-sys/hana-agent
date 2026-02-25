@@ -46,6 +46,9 @@ def create_agent(config: dict) -> Agent:
     # Register tools — file_read/file_write are module-level TOOL_SPEC tools (AC-04)
     tools = [safe_shell, file_read_tool, file_write_tool, editor]
 
+    # Conditionally register Phase 2 tools
+    tools.extend(_register_phase2_tools(config))
+
     # Create agent
     agent = Agent(
         model=model,
@@ -54,6 +57,41 @@ def create_agent(config: dict) -> Agent:
     )
 
     return agent
+
+
+def _register_phase2_tools(config: dict) -> list:
+    """Register Phase 2 tools conditionally based on availability."""
+    tools = []
+
+    # Git tool (always available)
+    try:
+        from yui.tools.git_tool import git_tool
+        tools.append(git_tool)
+        logger.info("Registered git_tool")
+    except ImportError:
+        logger.warning("git_tool not available")
+
+    # Kiro CLI tool (check binary exists)
+    kiro_path = Path(config["tools"]["kiro"]["binary_path"]).expanduser()
+    if kiro_path.exists():
+        try:
+            from yui.tools.kiro_delegate import kiro_delegate
+            tools.append(kiro_delegate)
+            logger.info("Registered kiro_delegate")
+        except ImportError:
+            logger.warning("kiro_delegate not available")
+    else:
+        logger.info("Kiro CLI not found at %s — skipping kiro_delegate", kiro_path)
+
+    # AgentCore tools (check boto3 available)
+    try:
+        from yui.tools.agentcore import code_execute, memory_recall, memory_store, web_browse
+        tools.extend([web_browse, memory_store, memory_recall, code_execute])
+        logger.info("Registered AgentCore tools")
+    except ImportError:
+        logger.info("AgentCore tools not available — install boto3 to enable")
+
+    return tools
 
 
 def _load_system_prompt(workspace: Path) -> str:
