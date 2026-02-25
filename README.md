@@ -1,4 +1,4 @@
-# HANA — Helpful Autonomous Networked Agent
+# Yui — Helpful Autonomous Networked Agent
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -55,42 +55,42 @@ LOCAL TIER (macOS)                    CLOUD TIER (AWS)
 
 ```bash
 # Clone
-git clone https://github.com/m4minidesk-sys/hana-agent.git
-cd hana-agent
+git clone https://github.com/m4minidesk-sys/yui-agent.git
+cd yui-agent
 
 # Install
 pip install -e .
 
 # Copy config
-cp config.yaml.example ~/.hana/config.yaml
+cp config.yaml.example ~/.yui/config.yaml
 cp .env.example .env
 
 # Run
-python -m hana
+python -m yui
 ```
 
 ### Usage
 
 ```bash
 # Interactive REPL
-python -m hana
+python -m yui
 
 # Single command
-python -m hana --prompt "List files in the current directory"
+python -m yui --prompt "List files in the current directory"
 
 # With custom config
-python -m hana --config /path/to/config.yaml
+python -m yui --config /path/to/config.yaml
 
 # Slack mode
-python -m hana --channel slack
+python -m yui --channel slack
 
 # Daemon mode
-python -m hana --daemon
+python -m yui --daemon
 ```
 
 ## Configuration
 
-Edit `~/.hana/config.yaml`:
+Edit `~/.yui/config.yaml`:
 
 ```yaml
 agent:
@@ -98,19 +98,19 @@ agent:
   region: "us-east-1"
 
 workspace:
-  root: "~/.hana/workspace"
+  root: "~/.yui/workspace"
 ```
 
 See [config.yaml.example](config.yaml.example) for full options.
 
 ## Workspace
 
-HANA uses markdown files for agent behavior and personality:
+Yui uses markdown files for agent behavior and personality:
 
 - **AGENTS.md** — Agent behavior rules and conventions
 - **SOUL.md** — Agent personality and tone
 
-Place these in your workspace directory (`~/.hana/workspace/` by default).
+Place these in your workspace directory (`~/.yui/workspace/` by default).
 
 ## Development
 
@@ -125,7 +125,7 @@ pytest
 ruff check .
 
 # Type check
-mypy hana/
+mypy yui/
 ```
 
 ## Phase Roadmap

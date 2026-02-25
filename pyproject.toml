@@ -3,9 +3,9 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "hana-agent"
+name = "yui-agent"
 version = "0.1.0"
-description = "HANA: Lightweight AWS-optimized AI agent orchestrator"
+description = "Yui: Lightweight AWS-optimized AI agent orchestrator"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.12"
@@ -40,10 +40,10 @@ dev = [
 ]
 
 [project.scripts]
-hana = "hana.main:main"
+yui = "yui.main:main"
 
 [tool.setuptools.packages.find]
-include = ["hana*"]
+include = ["yui*"]
 
 [tool.ruff]
 line-length = 100
