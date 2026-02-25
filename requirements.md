@@ -1,7 +1,8 @@
-# Yui — Requirements Document
+# 結（Yui） — Requirements Document
 
 > Lightweight, AWS-optimized AI agent orchestrator inspired by OpenClaw.
-> Version: 0.6.0-draft | Last updated: 2026-02-25 | Reviewed by: Kiro CLI (v1.26.2, 3 rounds) + han feedback
+> Name: 結（ゆい / Yui） — meaning "to tie, to bind, to connect"
+> Version: 0.7.0-draft | Last updated: 2026-02-25 | Reviewed by: Kiro CLI (v1.26.2, 3 rounds) + han feedback
 
 ---
 
@@ -29,7 +30,7 @@ AWS corporate engineers who need a local AI coding assistant that:
 | Criteria | Target |
 |---|---|
 | Install size | <50MB (vs OpenClaw's 300MB+) |
-| Python dependencies | ≤10 packages (core), ≤13 with optional features (meeting) |
+| Python dependencies | ≤10 packages (core), ≤15 with all optional features (meeting + ui + hotkey) |
 | Time to first working agent | <10 minutes |
 | Bedrock Converse API latency overhead | <100ms over raw API call |
 | Test coverage | >80% for core modules |
@@ -805,6 +806,122 @@ yui meeting search "keyword"         # Search across meeting transcripts (SQLite
 
 **Note**: Audio capture quality depends on system audio output settings. Headphone users may need to configure BlackHole as a multi-output device to capture audio while still hearing it.
 
+### 9.5.12 Meeting Trigger UI — Menu Bar App + Global Hotkey (Phase 2.5)
+
+Meeting recording can be triggered via CLI (`yui meeting start/stop`), but for day-to-day use a **macOS menu bar icon** and **global keyboard shortcut** provide a much better UX.
+
+#### Menu Bar Icon (rumps)
+
+A persistent status bar icon shows recording state at a glance and provides one-click meeting control.
+
+| State | Icon | Menu Items |
+|---|---|---|
+| Idle | 🎤 (grey microphone) | ▶️ Start Meeting (⌘⇧R), 📝 Last Minutes, ⚙️ Settings, Quit |
+| Recording | 🔴 (red dot) | ⏹ Stop Meeting (⌘⇧S), 📊 Status: Recording 00:23:45, Quit |
+| Generating minutes | ⏳ (hourglass) | Generating minutes…, Quit |
+| Minutes ready | ✅ (green check, 5s) | Returns to Idle after 5 seconds |
+
+**Behavior**:
+- macOS notification on recording start/stop/minutes ready
+- Recording timer displayed in menu dropdown
+- "Last Minutes" opens most recent minutes file in default editor
+- Menu bar app communicates with Yui daemon via local Unix domain socket (`~/.yui/yui.sock`)
+
+**Implementation**: `rumps` library (Ridiculously Uncomplicated macOS Python Statusbar apps)
+- Pure Python, PyObjC-based, ~50 lines of code
+- Runs as a separate lightweight process (`yui menubar`)
+- Automatically launched via launchd: `~/Library/LaunchAgents/com.yui.menubar.plist`
+
+#### Global Hotkey (pynput)
+
+Keyboard shortcuts for hands-free control without leaving the current app.
+
+| Shortcut | Action |
+|---|---|
+| `⌘⇧R` (Cmd+Shift+R) | Toggle recording (start if idle, stop if recording) |
+| `⌘⇧S` (Cmd+Shift+S) | Stop recording + generate minutes |
+| `⌘⇧M` (Cmd+Shift+M) | Open latest meeting minutes |
+
+**Implementation**: `pynput.keyboard.GlobalHotKeys`
+- Requires macOS Accessibility permission (System Settings → Privacy & Security → Accessibility)
+- Cmd+Shift modifiers recommended (Ctrl/Alt have known issues on macOS with pynput)
+- Shortcuts are configurable in `config.yaml`:
+
+```yaml
+meeting:
+  hotkeys:
+    toggle: "<cmd>+<shift>+r"
+    stop: "<cmd>+<shift>+s"
+    open_minutes: "<cmd>+<shift>+m"
+    enabled: true  # set false to disable hotkeys
+```
+
+#### IPC: Menu Bar ↔ Yui Daemon
+
+```
+┌─────────────────┐     Unix Socket      ┌─────────────────┐
+│  yui menubar    │ ←──────────────────→  │  yui daemon     │
+│  (rumps + UI)   │   ~/.yui/yui.sock     │  (agent + STT)  │
+│                 │                       │                 │
+│  • Menu state   │   JSON messages:      │  • Recording    │
+│  • Hotkeys      │   {cmd: "start"}      │  • Whisper      │
+│  • Notifications│   {cmd: "stop"}       │  • Bedrock      │
+│                 │   {status: "rec",     │                 │
+│                 │    elapsed: 1425}     │                 │
+└─────────────────┘                       └─────────────────┘
+```
+
+- Menu bar app sends commands: `{"cmd": "meeting_start"}`, `{"cmd": "meeting_stop"}`, `{"cmd": "meeting_status"}`
+- Daemon responds with status: `{"status": "recording", "elapsed_seconds": 1425, "transcript_lines": 342}`
+- Daemon pushes state changes to menu bar (recording started/stopped/minutes ready)
+
+#### CLI Entry Points
+
+```bash
+yui menubar              # Launch menu bar app (foreground)
+yui menubar --background # Launch as background process
+yui menubar --install    # Install launchd plist for auto-start on login
+yui menubar --uninstall  # Remove launchd plist
+```
+
+#### Dependencies (optional)
+
+| Package | Version | Purpose | License | Phase |
+|---|---|---|---|---|
+| `rumps` | ≥0.4 | macOS menu bar app | MIT | Phase 2.5 |
+| `pynput` | ≥1.7 | Global keyboard hotkeys | LGPL-3.0 | Phase 2.5 |
+
+```toml
+# pyproject.toml additions
+[project.optional-dependencies]
+meeting = ["mlx-whisper>=0.4", "sounddevice>=0.5", "numpy>=1.26"]
+ui = ["rumps>=0.4"]
+hotkey = ["pynput>=1.7"]
+all = ["yui-agent[meeting,ui,hotkey]"]
+```
+
+#### macOS Permissions Required
+
+| Permission | Required For | How to Grant |
+|---|---|---|
+| Screen Recording | ScreenCaptureKit audio capture | System Settings → Privacy → Screen Recording |
+| Microphone | Mic input recording | System Settings → Privacy → Microphone |
+| Accessibility | Global hotkeys (pynput) | System Settings → Privacy → Accessibility |
+| Notifications | Recording start/stop alerts | System Settings → Notifications |
+
+#### Acceptance Criteria
+
+- [ ] AC-52: Menu bar icon visible in macOS status bar after `yui menubar`
+- [ ] AC-53: Click "Start Meeting" → recording begins, icon changes to 🔴
+- [ ] AC-54: Click "Stop Meeting" → recording stops, minutes generated, icon returns to 🎤
+- [ ] AC-55: Global hotkey ⌘⇧R toggles recording on/off
+- [ ] AC-56: Recording elapsed time visible in menu dropdown
+- [ ] AC-57: macOS notification shown on recording start and minutes completion
+- [ ] AC-58: Menu bar app communicates with daemon via Unix socket
+- [ ] AC-59: `yui menubar --install` creates launchd plist for auto-start
+- [ ] AC-60: Hotkeys configurable via config.yaml; `enabled: false` disables them
+- [ ] AC-61: Menu bar app gracefully handles daemon not running (shows "Daemon offline" in menu)
+
 **Note**: These are **optional dependencies** — installed only when meeting feature is enabled. Core Yui works without them.
 
 ```toml
@@ -814,6 +931,9 @@ yui = "yui.__main__:main"
 
 [project.optional-dependencies]
 meeting = ["mlx-whisper>=0.4", "sounddevice>=0.5", "numpy>=1.26"]
+ui = ["rumps>=0.4"]
+hotkey = ["pynput>=1.7"]
+all = ["yui-agent[meeting,ui,hotkey]"]
 ```
 
 ---
@@ -892,6 +1012,16 @@ meeting = ["mlx-whisper>=0.4", "sounddevice>=0.5", "numpy>=1.26"]
 - [ ] AC-49: `yui meeting search "keyword"` searches across meeting transcripts
 - [ ] AC-50: Real-time analysis updates every 60s during active meeting (action items, decisions)
 - [ ] AC-51: Meeting feature is opt-in — requires `pip install yui-agent[meeting]`
+- [ ] AC-52: Menu bar icon visible in macOS status bar after `yui menubar`
+- [ ] AC-53: Click "Start Meeting" → recording begins, icon changes to 🔴
+- [ ] AC-54: Click "Stop Meeting" → recording stops, minutes generated, icon returns to 🎤
+- [ ] AC-55: Global hotkey ⌘⇧R toggles recording on/off
+- [ ] AC-56: Recording elapsed time visible in menu dropdown
+- [ ] AC-57: macOS notification shown on recording start and minutes completion
+- [ ] AC-58: Menu bar app communicates with daemon via Unix socket (`~/.yui/yui.sock`)
+- [ ] AC-59: `yui menubar --install` creates launchd plist for auto-start on login
+- [ ] AC-60: Hotkeys configurable via config.yaml; `enabled: false` disables them
+- [ ] AC-61: Menu bar app gracefully handles daemon not running (shows "Daemon offline")
 
 ### Phase 3 (Guardrails + Heartbeat + Daemon)
 
@@ -975,6 +1105,13 @@ meeting = ["mlx-whisper>=0.4", "sounddevice>=0.5", "numpy>=1.26"]
 | `sounddevice` | ≥0.5 | Audio capture | MIT |
 | `numpy` | ≥1.26 | Audio buffer processing | BSD |
 
+**Optional dependencies (UI/hotkey):**
+
+| Package | Version | Purpose | License |
+|---|---|---|---|
+| `rumps` | ≥0.4 | macOS menu bar app | MIT |
+| `pynput` | ≥1.7 | Global keyboard hotkeys | LGPL-3.0 |
+
 ---
 
 ## 15. Open Questions
@@ -1015,3 +1152,4 @@ meeting = ["mlx-whisper>=0.4", "sounddevice>=0.5", "numpy>=1.26"]
 | 2026-02-25 | AYA | v0.4.0 — han feedback incorporated: (①②③) AWS Bedrock features explicitly enumerated in Section 4.6. (④) Kiro CLI made required dependency with startup check; AGENTS.md ships with Kiro⇔Yui cross-review workflow. (⑤) Outlook tools replaced by aws-outlook-mcp corporate MCP server. (⑥) diagram/media tools replaced by MCP servers. New Section 4.4 for MCP integration. MCP config.yaml schema added. `mcp` package added as 9th dependency. E-13/E-14 error handling for MCP. AC-25a/b/c, AC-36/AC-37 added. |
 | 2026-02-25 | AYA | v0.5.0 — HANA→Yui rename (per han's naming decision). New Section 9.5: Meeting Transcription & Automatic Minutes (Whisper + Bedrock). Discovery: Whisper local vs Amazon Transcribe comparison, mlx-whisper as default engine, ScreenCaptureKit for audio capture, hybrid local/cloud architecture (audio local, LLM cloud). New tools: meeting_recorder, whisper_transcribe. CLI: yui meeting start/stop/status/list/search. Auto-minutes with Bedrock (summary, action items, decisions). Real-time analysis during meetings. Optional deps via pyproject.toml extras [meeting]. AC-40–51, E-15–18 added. |
 | 2026-02-25 | AYA | v0.6.0 — Kiro round 3 review: C-01 WER accuracy corrected (Whisper ~8-12%, Transcribe ~5-8%). C-02 ScreenCaptureKit confirmed capable of audio capture (capturesAudio API), but PyObjC stability note added + BlackHole fallback strengthened. C-03 `yui` console script added to pyproject.toml. C-04 realtime_enabled default→false, budget guard added. C-05 Meeting tool specs added (Section 4.10.1). M-01 Minutes template fixed (no attendees without diarization). M-02 pyaudio removed, sounddevice only. M-03 Whisper crash recovery (E-19). M-04 Privacy claim clarified for Transcribe opt-in. M-05 Meeting→Phase 2.5. M-06 Meeting app compatibility table added (Section 9.5.11). M-07 AgentCore Code Interpreter AC added. Minor: sliding window config, Slack mrkdwn note, FTS5 search, MCP allowlist docs, optional deps in Section 14, retention cleanup in daemon, test coverage clarification. |
+| 2026-02-25 | AYA | v0.7.0 — Name: 結（ゆい / Yui）. Repo renamed: hana-agent → yui-agent. New Section 9.5.12: Meeting Trigger UI (Menu Bar App + Global Hotkey). rumps-based macOS menu bar icon with recording state indicator (🎤/🔴/⏳/✅). pynput global hotkeys (⌘⇧R toggle, ⌘⇧S stop, ⌘⇧M open minutes). IPC via Unix domain socket (~/.yui/yui.sock). launchd auto-start support. CLI: yui menubar [--install/--uninstall]. Optional deps: rumps, pynput. AC-52 through AC-61 added. Phase 2.5 scope expanded. |

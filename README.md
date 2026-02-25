@@ -1,4 +1,4 @@
-# Yui — Helpful Autonomous Networked Agent
+# 結（Yui） — Your Unified Intelligence
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -6,17 +6,21 @@
 
 **Lightweight, secure, AWS-optimized AI agent orchestrator** — an OpenClaw alternative built on the Strands Agent SDK.
 
+> 結（ゆい / Yui） — "to tie, to bind, to connect"
+
 ## Features
 
 - 🧠 **Strands Agent SDK** — Modern agent framework with built-in tool orchestration
 - ☁️ **AWS-Native** — Bedrock Converse API, AgentCore Browser/Memory, Guardrails
-- 🛠️ **Rich Tool Suite** — exec, file ops, git, Kiro delegation, Outlook (AppleScript), Slack
+- 🛠️ **Rich Tool Suite** — exec, file ops, git, Kiro delegation, Slack
 - 💬 **Multi-Channel** — CLI REPL + Slack Socket Mode
 - 💾 **Persistent Sessions** — SQLite local + S3 sync
 - 🔒 **Security First** — Command allowlists, Bedrock Guardrails, scoped file access
 - 🍎 **macOS-Optimized** — Designed for Mac (arm64) with launchd daemon
 - ⏰ **Heartbeat** — Periodic autonomous actions with configurable schedules
 - 😈 **Daemon Mode** — launchd background service
+- 🎤 **Meeting Transcription** — Whisper-based STT + auto-minutes via Bedrock
+- 🖥️ **Menu Bar App** — One-click recording trigger from macOS status bar
 
 ## Architecture
 
@@ -132,10 +136,11 @@ mypy yui/
 
 | Phase | Scope | Timeline |
 |---|---|---|
-| **Phase 0** ✅ | CLI + Bedrock + exec/file tools | 3 days |
-| **Phase 1** ✅ | Slack + Session management | 1 week |
-| **Phase 2** ✅ | Kiro/git/AgentCore Browser/Memory | 1 week |
-| **Phase 3** ✅ | Guardrails + Heartbeat + Daemon (launchd) | 1 week |
+| **Phase 0** | CLI + Bedrock + exec/file tools | 3 days |
+| **Phase 1** | Slack + Session management | 1 week |
+| **Phase 2** | Kiro/git/AgentCore Browser/Memory | 1 week |
+| **Phase 2.5** | Meeting Transcription + Menu Bar UI | 1 week |
+| **Phase 3** | Guardrails + Heartbeat + Daemon (launchd) | 1 week |
 
 ## License
 

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "yui-agent"
 version = "0.1.0"
-description = "Yui: Lightweight AWS-optimized AI agent orchestrator"
+description = "結（Yui）: Lightweight AWS-optimized AI agent orchestrator"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.12"
@@ -38,9 +38,23 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
 ]
+meeting = [
+    "mlx-whisper>=0.4",
+    "sounddevice>=0.5",
+    "numpy>=1.26",
+]
+ui = [
+    "rumps>=0.4",
+]
+hotkey = [
+    "pynput>=1.7",
+]
+all = [
+    "yui-agent[meeting,ui,hotkey]",
+]
 
 [project.scripts]
-yui = "yui.main:main"
+yui = "yui.__main__:main"
 
 [tool.setuptools.packages.find]
 include = ["yui*"]
