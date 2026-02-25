@@ -1,7 +1,7 @@
 # HANA — Requirements Document
 
 > Lightweight, AWS-optimized AI agent orchestrator inspired by OpenClaw.
-> Version: 0.3.0-draft | Last updated: 2026-02-25 | Reviewed by: Kiro CLI (v1.26.2, 2 rounds)
+> Version: 0.4.0-draft | Last updated: 2026-02-25 | Reviewed by: Kiro CLI (v1.26.2, 2 rounds) + han feedback
 
 ---
 
@@ -53,7 +53,7 @@ AWS corporate engineers who need a local AI coding assistant that:
 - **mwinit/Midway authentication caching** — users handle AWS auth externally
 - **Docker sandbox** — uses command allowlist/blocklist instead
 - **Multi-channel support** — Slack + CLI only (no Telegram, Discord, etc.)
-- **Plugin/Hook system** — tools are registered in code, not dynamically loaded
+- **Plugin/Hook system** — tools are registered in code or via MCP, not via plugin hooks
 - **MCP server hosting** — HANA consumes MCP tools but does not expose MCP endpoints
 - **24/7 Slack Bot (Lambda deployment)** — Phase 0-3 uses local Socket Mode only; cloud Slack adapter deferred to Phase 4+
 - **Flexible cron scheduling (EventBridge)** — Phase 0-3 uses fixed-interval Heartbeat only; EventBridge deferred to Phase 4+
@@ -166,11 +166,11 @@ These tools MUST run locally because they access local filesystem, CLIs, or macO
 | `file_read` | strands-agents-tools | Read file contents | Local filesystem |
 | `file_write` | strands-agents-tools | Write/create files | Local filesystem |
 | `editor` | strands-agents-tools | View, replace, insert, undo edits | Local filesystem |
-| `kiro_delegate` | Custom | Delegate coding tasks to Kiro CLI | Local CLI + workspace access |
+| `kiro_delegate` | Custom | Delegate coding tasks to Kiro CLI | Local CLI + workspace access. **Kiro CLI is a required dependency** (han review item ④) |
 | `git_tool` | Custom | Git operations (status, add, commit, push, log, diff) | Local repo access |
-| `outlook_calendar` | Custom | Read/create Outlook calendar events (Mac only) | macOS AppleScript API |
-| `outlook_mail` | Custom | Read Outlook email / create drafts (Mac only) | macOS AppleScript API |
 | `http_request` | strands-agents-tools | HTTP GET/POST to public URLs | Low latency, simple HTTP |
+
+**Note**: `outlook_calendar` and `outlook_mail` are no longer custom local tools. They are provided via the `aws-outlook-mcp` corporate MCP server (see Section 4.4).
 
 ### 4.2 Cloud Tools (run on AWS)
 
@@ -190,16 +190,64 @@ These tools run in AWS because they require managed infrastructure, sandboxing, 
 |---|---|---|---|
 | `slack_client` | Socket Mode WebSocket from local machine | Slack API (external SaaS) | Must be local for Socket Mode; Slack API is external but authorized via bot tokens |
 
-### 4.4 Explicitly NOT included (with rationale)
+### 4.4 MCP Server Integration (han review — items ⑤⑥)
 
-| Tool | Available in strands-agents-tools | Why excluded |
+HANA uses Strands SDK's native MCP support (`MCPClient` / `mcp_client` tool) to extend capabilities via MCP servers. This replaces custom tool implementations for Outlook and media/diagram generation.
+
+**Strands MCP integration patterns:**
+- **Static (pre-configured)**: `MCPClient` from `strands.tools.mcp` — loaded at startup from config.yaml
+- **Dynamic (runtime)**: `mcp_client` tool from `strands-agents-tools` — agent can connect to new MCP servers on demand
+
+```yaml
+# config.yaml — MCP server configuration
+mcp:
+  servers:
+    # Corporate MCP servers (pre-configured, loaded at startup)
+    outlook:
+      transport: stdio
+      command: "aws-outlook-mcp"    # Corporate Outlook MCP server
+      args: []
+      enabled: true
+    # Additional MCP servers can be added here
+  dynamic:
+    enabled: true                   # Allow agent to connect to new MCP servers at runtime
+    allowlist: []                   # Optional: restrict to specific server commands
+```
+
+**MCP replaces these previously custom/excluded tools:**
+
+| Previously | Now via MCP | MCP Server |
 |---|---|---|
-| `tavily_search` / `tavily_extract` / `tavily_crawl` | Yes | **Sends queries to external SaaS (outside AWS VPC)** — conflicts with data governance requirement. Use `retrieve` (Bedrock KB) or `http_request` instead. Can be opt-in enabled in config.yaml with explicit warning. |
-| `exa_search` / `exa_get_contents` | Yes | Same VPC concern as Tavily |
-| `python_repl` (local) | Yes | **Security risk** — arbitrary local code execution without sandbox. Use AgentCore Code Interpreter instead. Can be opt-in enabled with import allowlist. |
-| `use_browser` (local Chromium) | Yes | **~2GB memory overhead** — use AgentCore Browser by default. Available as fallback for offline/AgentCore-unavailable scenarios via config. |
-| `use_computer` | Yes | Desktop automation — high security risk, out of scope |
-| `nova_reels` / image / video / audio tools | Yes | Media generation — not required for coding assistant use case |
+| `outlook_calendar` (custom AppleScript) | MCP tool call | `aws-outlook-mcp` (corporate) |
+| `outlook_mail` (custom AppleScript) | MCP tool call | `aws-outlook-mcp` (corporate) |
+| `diagram` (excluded) | MCP tool call | Corporate/community MCP server |
+| `nova_reels` / image / video (excluded) | MCP tool call (opt-in) | Corporate/community MCP server |
+
+### 4.5 Explicitly NOT included as builtin (with rationale + alternative)
+
+| Tool | Why not builtin | Alternative | Status |
+|---|---|---|---|
+| `tavily_search` / `tavily_extract` / `tavily_crawl` | Sends queries to external SaaS outside AWS VPC | **AgentCore Browser** (cloud-managed Chrome for web browsing + search) | Bedrock feature: AgentCore Browser (`bedrock-agentcore:CreateBrowser`, `StartBrowserSession`) |
+| `exa_search` / `exa_get_contents` | Same VPC concern as Tavily | **AgentCore Browser** | Same as above |
+| `python_repl` (local) | Arbitrary local code execution without sandbox | **AgentCore Code Interpreter** (sandboxed, multi-language) | Bedrock feature: AgentCore Code Interpreter (`bedrock-agentcore:CreateCodeInterpreter`) |
+| `use_browser` (local Chromium) | ~2GB memory overhead | **AgentCore Browser** (default). Local Chromium available as opt-in fallback for auth-required internal sites | Config: `tools.browser.provider: local` |
+| `use_computer` | High security risk (arbitrary desktop control) | **MCP servers** for specific desktop integrations as needed | Deferred — no current use case beyond what Outlook MCP + Kiro CLI cover |
+| `outlook_calendar` / `outlook_mail` (custom) | AppleScript is Mac-specific, brittle | **`aws-outlook-mcp`** corporate MCP server | MCP: cross-platform, maintained by corporate team |
+| `nova_reels` / image / video / audio | Not core to coding assistant use case | **MCP servers** (corporate/community) for on-demand media generation | MCP: extensible without code changes |
+| `diagram` | Not core enough for builtin | **MCP server** (community) for diagram generation when needed | MCP: available on-demand |
+
+### 4.6 AWS Bedrock features used (explicit enumeration — han review items ①②③)
+
+HANA depends on the following specific AWS Bedrock/AgentCore features. These must be available in the target AWS region.
+
+| Feature | AWS Service | API/Resource | Purpose in HANA | Phase |
+|---|---|---|---|---|
+| **LLM Inference** | Bedrock | `bedrock:InvokeModel`, `bedrock:InvokeModelWithResponseStream` | Core agent loop — Converse API | Phase 0 |
+| **Guardrails** | Bedrock | `bedrock:ApplyGuardrail` + Guardrail resource | Input/output safety filtering | Phase 3 |
+| **AgentCore Browser** | Bedrock AgentCore | `bedrock-agentcore:CreateBrowser`, `StartBrowserSession`, `ConnectBrowserAutomationStream`, `ConnectBrowserLiveViewStream` | Cloud-managed Chrome for web browsing, search, content extraction. **Replaces Tavily/Exa** | Phase 2 |
+| **AgentCore Memory** | Bedrock AgentCore | AgentCore Memory API (create memory, store, retrieve) | Long-term memory (facts, preferences) with cross-device sync | Phase 2 |
+| **AgentCore Code Interpreter** | Bedrock AgentCore | `bedrock-agentcore:CreateCodeInterpreter` + session management | Sandboxed Python/JS/TS execution. **Replaces local python_repl** | Phase 2 |
+| **Knowledge Base** | Bedrock | `bedrock:Retrieve`, `bedrock:RetrieveAndGenerate` | Semantic search over indexed corporate documents (RAG) | Phase 2 |
 
 ### 4.5 Browser provider selection (Kiro review round 2, C-1)
 
@@ -281,16 +329,15 @@ SQLite handles ephemeral session data. AgentCore Memory handles durable knowledg
 
 | Tool | Purpose | Implementation notes |
 |---|---|---|
-| `kiro_delegate` | Delegate coding tasks to Kiro CLI | `subprocess.run(["kiro-cli", "chat", "--no-interactive", ...])`, ANSI strip, timeout 300s, **output truncated at 50,000 chars** |
+| `kiro_delegate` | Delegate coding tasks to Kiro CLI | `subprocess.run(["kiro-cli", "chat", "--no-interactive", ...])`, ANSI strip, timeout 300s, **output truncated at 50,000 chars**. **Kiro CLI must be installed** — HANA checks at startup and provides install instructions if missing |
 | `git_tool` | Git operations (status, add, commit, push, log, diff, branch, checkout) | Wrapper around `subprocess.run(["git", ...])` with allowlisted subcommands |
-| `outlook_calendar` | Read/create Outlook calendar events (Mac only) | AppleScript via `osascript` subprocess |
-| `outlook_mail` | Read Outlook email / create drafts (Mac only) | AppleScript via `osascript` subprocess |
 
 ### 4.11 Tool security model
 
 - **Shell execution**: strands-agents-tools `shell` tool has built-in user confirmation. HANA config adds an allowlist with subcommand granularity (e.g., `"git status"`, `"git log"`, `"git diff"` — not bare `"git"`) and a blocklist (e.g., `["rm -rf /", "sudo", "curl | bash", "git push --force", "git reset --hard", "git clean -f"]`). Remove bare `git` from shell allowlist; use dedicated `git_tool` for safe git operations.
 - **File operations**: Restricted to configurable workspace directory by default
-- **Outlook**: Read-only by default; draft creation requires explicit `allow_drafts: true` config flag. AppleScript execution is sandboxed: only `tell application "Microsoft Outlook"` is allowed. Generated AppleScript is validated before execution — any `tell application` targeting a non-Outlook app is rejected.
+- **Outlook**: Provided via `aws-outlook-mcp` corporate MCP server. No local AppleScript — cross-platform, maintained by corporate team.
+- **MCP servers**: Static servers loaded from config.yaml at startup. Dynamic server connections require `mcp.dynamic.enabled: true`. Optional allowlist restricts which servers can be connected at runtime.
 - **Python execution**: AgentCore Code Interpreter by default (sandboxed). Local `python_repl` requires explicit opt-in + import allowlist.
 - **Web search**: Bedrock Knowledge Base by default (VPC-internal). Tavily requires explicit opt-in with logged warning.
 - **Browser**: AgentCore Browser by default (managed Chrome). Local Chromium requires explicit opt-in.
@@ -345,9 +392,40 @@ SQLite handles ephemeral session data. AgentCore Memory handles durable knowledg
 ├── config.yaml          # Main configuration
 ├── sessions.db          # SQLite session store (auto-created)
 ├── workspace/
-│   ├── AGENTS.md        # System prompt (what the agent does)
+│   ├── AGENTS.md        # System prompt (what the agent does) — includes Kiro cross-review workflow
 │   └── SOUL.md          # Persona definition (how the agent behaves)
 └── .env                 # Secrets (SLACK_BOT_TOKEN, etc.)
+```
+
+### 7.1.1 Kiro CLI as required dependency (han review item ④)
+
+Kiro CLI is a **required setup dependency**, not optional. HANA delegates all coding tasks to Kiro CLI, following the same pattern as AYA's ecosystem:
+
+**Setup requirement:**
+- `kiro-cli` must be installed and authenticated before HANA can start
+- HANA checks for Kiro CLI at startup: if missing, displays install instructions and exits
+- Kiro CLI path is configurable via `tools.kiro.binary_path`
+
+**AGENTS.md cross-review workflow (built-in):**
+
+The default `~/.hana/workspace/AGENTS.md` shipped with HANA includes a mandatory Kiro⇔HANA cross-review process, modeled on AYA's ecosystem:
+
+```markdown
+# Default AGENTS.md excerpt — Kiro Cross-Review Workflow
+
+## Coding Workflow (mandatory)
+1. HANA writes requirements.md (What/Why)
+2. Kiro CLI generates design.md + tasks.md (How)
+3. Kiro CLI implements code
+4. HANA reviews Kiro's output against requirements (AC matching)
+5. Kiro CLI reviews HANA's requirements for ambiguities
+6. Iterate until both pass
+7. Only then: PR creation
+
+## Rules
+- HANA MUST NOT write code directly — all code via Kiro CLI
+- Requirements changes require re-review cycle
+- Every PR must have been reviewed by both HANA and Kiro
 ```
 
 ### 7.2 config.yaml schema
@@ -389,10 +467,18 @@ tools:
   kiro:
     binary_path: "~/.local/bin/kiro-cli"
     timeout_seconds: 300
-  outlook:
-    enabled: false                  # Disabled by default
-    allow_drafts: false             # Draft creation requires explicit opt-in
-    # AppleScript sandboxed: only "Microsoft Outlook" target allowed
+
+# MCP server configuration (han review items ⑤⑥)
+mcp:
+  servers:
+    outlook:
+      transport: stdio
+      command: "aws-outlook-mcp"
+      args: []
+      enabled: true
+  dynamic:
+    enabled: true
+    allowlist: []                   # Optional: restrict dynamic MCP connections
   browser:
     provider: agentcore             # "agentcore" (default, cloud) or "local" (fallback)
     region: us-east-1
@@ -484,7 +570,7 @@ runtime:
 | **Language** | Python 3.12+ |
 | **License** | Apache 2.0 |
 | **Install size** | <50MB |
-| **Dependencies** | strands-agents, strands-agents-tools, bedrock-agentcore, boto3, slack-bolt, pyyaml, rich |
+| **Dependencies** | strands-agents, strands-agents-tools, bedrock-agentcore, boto3, slack-bolt, pyyaml, rich, mcp |
 | **Startup time** | <3 seconds to CLI REPL |
 | **LLM latency** | No measurable overhead vs raw Bedrock API call |
 | **Security** | No plaintext secrets in config; .env file with 600 permissions |
@@ -523,6 +609,7 @@ runtime:
 - [ ] AC-17: AgentCore Browser Tool can fetch and extract web page content
 - [ ] AC-18: AgentCore Memory can store and retrieve memories across sessions
 - [ ] AC-19: Kiro CLI timeout (>300s) produces graceful error, not crash
+- [ ] AC-19a: Kiro CLI missing at startup → clear error with install instructions, exit code 1
 
 ### Phase 3 (Guardrails + Heartbeat + Daemon)
 
@@ -532,6 +619,9 @@ runtime:
 - [ ] AC-23: `launchctl load` starts HANA as background daemon
 - [ ] AC-24: Daemon auto-restarts on crash within 5 seconds
 - [ ] AC-25: `hana daemon status` reports running/stopped state
+- [ ] AC-25a: Static MCP servers from config.yaml are connected at startup
+- [ ] AC-25b: `aws-outlook-mcp` server provides calendar and mail functionality
+- [ ] AC-25c: Dynamic MCP server connection works at agent runtime
 
 ### Error Handling (negative tests — Kiro review m-05)
 
@@ -545,6 +635,8 @@ runtime:
 - [ ] AC-33: Kiro CLI not found → graceful error message (E-07)
 - [ ] AC-34: SQLite database locked → retry with backoff, then clear error (E-06)
 - [ ] AC-35: Context window exceeded → force compaction or archive session (E-12)
+- [ ] AC-36: MCP server connection failure → graceful degradation, agent continues (E-13)
+- [ ] AC-37: Kiro CLI missing at startup → exit with install instructions (E-07 revised)
 
 ---
 
@@ -558,12 +650,14 @@ runtime:
 | E-04 | Slack tokens invalid/expired | Error on startup: "Slack authentication failed. Check SLACK_BOT_TOKEN and SLACK_APP_TOKEN." |
 | E-05 | Slack Socket Mode disconnects | Auto-reconnect (handled by slack-bolt). Log warning. |
 | E-06 | SQLite database locked | Retry with 100ms backoff, max 5 attempts. If still locked: "Session database is locked. Another HANA instance may be running." |
-| E-07 | Kiro CLI not found in PATH | `kiro_delegate` returns: "Kiro CLI not found at configured path. Install it or update tools.kiro.binary_path." |
+| E-07 | Kiro CLI not found in PATH | **Startup error**: "Kiro CLI not found at configured path. HANA requires Kiro CLI for coding tasks. Install it from https://kiro.dev/docs/cli/ or update tools.kiro.binary_path." **Exit code 1** |
 | E-08 | Shell command in blocklist attempted | Return: "Command blocked by security policy." Log the attempt. |
 | E-09 | File operation outside workspace_root | Return: "Access denied: path is outside configured workspace." |
 | E-10 | config.yaml missing | Use defaults. Log: "No config.yaml found at ~/.hana/config.yaml, using defaults." |
 | E-11 | AGENTS.md / SOUL.md missing | Agent runs with base system prompt only. Log info. |
 | E-12 | Context window exceeded before compaction | Force compaction. If compaction itself fails (summary too large), archive current session to `~/.hana/sessions_archive/<session_id>.json`, start new session, send user: "Previous conversation was archived due to length. Starting fresh." |
+| E-13 | MCP server connection failed | Log warning, continue without that MCP server's tools. User message: "MCP server [name] is unavailable. Some features may be limited." |
+| E-14 | MCP server timeout | Retry once after 5s. If still fails, skip tool call with error message. |
 
 ---
 
@@ -579,8 +673,9 @@ runtime:
 | `slack-sdk` | ≥3.33.0 | Slack API client (transitive via slack-bolt) | MIT |
 | `pyyaml` | ≥6.0 | YAML config parsing | MIT |
 | `rich` | ≥13.0 | CLI formatted output | MIT |
+| `mcp` | ≥1.0.0 | MCP protocol client (for MCP server integration) | MIT |
 
-**Total: 8 direct dependencies** (vs OpenClaw's 54)
+**Total: 9 direct dependencies** (vs OpenClaw's 54)
 
 ---
 
@@ -618,4 +713,5 @@ runtime:
 | Date | Author | Change |
 |---|---|---|
 | 2026-02-25 | AYA | Initial draft — Discovery from OpenClaw source analysis + Strands SDK research |
-| 2026-02-25 | AYA | v0.3.0 — Local/Cloud boundary redesign per han's directive + Kiro round 2 review. Section 4 fully rewritten with 3-tier model (local/cloud/hybrid). Browser: AgentCore default, local fallback (C-1). Web search: Bedrock KB default, Tavily opt-in (C-2). Python: AgentCore Code Interpreter default, local opt-in (C-3). Memory: 2-tier (SQLite short-term + AgentCore long-term) with clear separation (M-2). Slack: local Socket Mode confirmed for Phase 0-3 (M-1). Scheduler: fixed-interval only, EventBridge deferred (M-3). Added http_request to local tools (m-1). 6 explicitly excluded tools with rationale. Config.yaml updated with provider selection for browser/search/python/memory. Q-01 resolved, Q-06/Q-07 added. |
+| 2026-02-25 | AYA | v0.3.0 — Local/Cloud boundary redesign per han's directive + Kiro round 2 review. Section 4 fully rewritten with 3-tier model. |
+| 2026-02-25 | AYA | v0.4.0 — han feedback incorporated: (①②③) AWS Bedrock features explicitly enumerated in Section 4.6. (④) Kiro CLI made required dependency with startup check; AGENTS.md ships with Kiro⇔HANA cross-review workflow. (⑤) Outlook tools replaced by aws-outlook-mcp corporate MCP server. (⑥) diagram/media tools replaced by MCP servers. New Section 4.4 for MCP integration. MCP config.yaml schema added. `mcp` package added as 9th dependency. E-13/E-14 error handling for MCP. AC-25a/b/c, AC-36/AC-37 added. |
