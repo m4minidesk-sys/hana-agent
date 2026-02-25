@@ -2,7 +2,7 @@
 
 > Lightweight, AWS-optimized AI agent orchestrator inspired by OpenClaw.
 > Name: 結（ゆい / Yui） — meaning "to tie, to bind, to connect"
-> Version: 0.7.0-draft | Last updated: 2026-02-25 | Reviewed by: Kiro CLI (v1.26.2, 3 rounds) + han feedback
+> Version: 0.8.0-draft | Last updated: 2026-02-25 | Reviewed by: Kiro CLI (v1.26.2, 3 rounds) + han feedback
 
 ---
 
@@ -373,6 +373,161 @@ SQLite handles ephemeral session data. AgentCore Memory handles durable knowledg
 - **Threading**: Replies in thread when original message is threaded
 - **Reactions**: 👀 on receipt, ✅ on completion. Batch status updates — do NOT react after every tool call (Kiro review M-03)
 - **Rate limiting**: `slack-bolt` has built-in rate limit handling with automatic retry+backoff. If rate limited for >30s, send single message: "Response ready but Slack rate limited. Will retry shortly."
+
+### 5.2.1 Slack App/Bot Setup Guide (Phase 1 prerequisite)
+
+Yui communicates via Slack using **Socket Mode** — a WebSocket-based connection that requires no public URL, no ngrok, no firewall changes. This makes it ideal for local/corporate environments behind firewalls.
+
+#### Step-by-step: Creating the Slack App
+
+**Step 1: Create the Slack App**
+1. Go to https://api.slack.com/apps → "Create New App"
+2. Select "From an app manifest" (recommended — reproducible setup)
+3. Select your workspace
+4. Paste the manifest below → Create App
+
+**Step 2: App Manifest (YAML)**
+
+The following manifest configures 結(Yui) as a Socket Mode bot with all required scopes:
+
+```yaml
+_metadata:
+  major_version: 1
+display_information:
+  name: "結 (Yui)"
+  description: "AI secretary agent — lightweight, AWS-optimized"
+  background_color: "#4A154B"
+features:
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+  bot_user:
+    display_name: "Yui"
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      # Core messaging
+      - app_mentions:read        # Respond to @Yui mentions
+      - chat:write               # Send messages
+      - chat:write.customize     # Send with custom username/icon
+      # Channel awareness
+      - channels:history         # Read public channel messages
+      - channels:read            # List channels
+      - groups:history           # Read private channel messages
+      - groups:read              # List private channels
+      - im:history               # Read DM messages
+      - im:read                  # List DMs
+      - im:write                 # Open DMs
+      - mpim:history             # Read group DM messages
+      - mpim:read                # List group DMs
+      # Reactions & threads
+      - reactions:read           # Read reactions
+      - reactions:write          # Add 👀/✅ reactions
+      # File sharing (meeting minutes)
+      - files:write              # Upload meeting minutes
+      - files:read               # Read shared files
+      # User info
+      - users:read               # Resolve user names
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention              # @Yui triggers
+      - message.channels         # Public channel messages
+      - message.groups           # Private channel messages
+      - message.im               # Direct messages
+      - message.mpim             # Group DMs
+  org_deploy_enabled: false
+  socket_mode_enabled: true      # ← Key setting: Socket Mode
+  is_hosted: false
+  token_rotation_enabled: false
+```
+
+**Step 3: Enable Socket Mode**
+1. In app settings → "Socket Mode" (left sidebar) → Toggle ON
+2. This confirms WebSocket connection instead of HTTP endpoint
+
+**Step 4: Generate Tokens**
+
+| Token | Where | Scope | Config Key |
+|---|---|---|---|
+| **Bot Token** (`xoxb-`) | OAuth & Permissions → Install to Workspace → Copy | (from manifest scopes) | `SLACK_BOT_TOKEN` |
+| **App-Level Token** (`xapp-`) | Basic Information → App-Level Tokens → Generate | `connections:write` | `SLACK_APP_TOKEN` |
+
+**Step 5: Install to Workspace**
+1. OAuth & Permissions → "Install to Workspace"
+2. Review permissions → "Allow"
+3. Copy the Bot User OAuth Token (`xoxb-...`)
+
+**Step 6: Configure Yui**
+
+```yaml
+# ~/.yui/config.yaml
+slack:
+  enabled: true
+  bot_token: "${SLACK_BOT_TOKEN}"      # xoxb-...
+  app_token: "${SLACK_APP_TOKEN}"      # xapp-...
+  default_channel: "#yui-general"       # Optional: default channel for notifications
+```
+
+```bash
+# ~/.yui/.env
+SLACK_BOT_TOKEN=xoxb-your-bot-token-here
+SLACK_APP_TOKEN=xapp-your-app-level-token-here
+```
+
+**Step 7: Invite Yui to Channels**
+```
+/invite @Yui
+```
+Yui only receives messages from channels it's been invited to (except DMs).
+
+#### Architecture: Why Socket Mode?
+
+```
+┌─────────────────────────┐
+│  Mac (behind firewall)  │
+│                         │
+│  ┌───────────────────┐  │       WebSocket (outbound only)
+│  │  Yui Agent        │──│──────────────────────────────→ Slack API
+│  │  (slack-bolt)     │  │  ← No inbound ports needed
+│  │                   │  │  ← No public URL
+│  │  Socket Mode      │  │  ← No ngrok/tunnel
+│  └───────────────────┘  │
+└─────────────────────────┘
+```
+
+| Feature | Socket Mode | HTTP (Events API) |
+|---|---|---|
+| Public URL needed | ❌ No | ✅ Yes |
+| Firewall changes | ❌ None | ✅ Inbound port |
+| SSL certificate | ❌ Not needed | ✅ Required |
+| Latency | ~50ms (WebSocket) | ~100-200ms (HTTP) |
+| Marketplace distribution | ❌ Not eligible | ✅ Eligible |
+| Corporate firewall compatible | ✅ Perfect fit | ⚠️ Needs config |
+
+**Trade-off**: Socket Mode apps cannot be published to the Slack Marketplace. This is acceptable for Yui — it's a personal/team agent, not a public product.
+
+#### Slack App Capabilities
+
+| Capability | How Yui Uses It |
+|---|---|
+| **@mention response** | `@Yui what's my schedule?` → Agent processes and replies in thread |
+| **DM conversation** | Direct messages for private interactions |
+| **Channel monitoring** | Listen to specific channels, respond when relevant |
+| **Reactions** | 👀 on receipt, 🔥 on processing, ✅ on completion |
+| **File upload** | Share meeting minutes, reports as Slack files |
+| **Thread replies** | Keep conversations organized in threads |
+| **Notifications** | Post meeting summaries, heartbeat alerts to channels |
+
+#### Acceptance Criteria (Slack Setup)
+
+- [ ] AC-62: `yui setup slack` CLI command validates tokens and tests connection
+- [ ] AC-63: App manifest YAML is shipped in repo as `slack-manifest.yaml` for one-click setup
+- [ ] AC-64: Missing/invalid tokens at startup → clear error message with setup instructions
+- [ ] AC-65: Yui responds to @mention within 3 seconds (👀 reaction) in any invited channel
+- [ ] AC-66: DM messages processed without @mention prefix
 
 ---
 
@@ -1153,3 +1308,4 @@ all = ["yui-agent[meeting,ui,hotkey]"]
 | 2026-02-25 | AYA | v0.5.0 — HANA→Yui rename (per han's naming decision). New Section 9.5: Meeting Transcription & Automatic Minutes (Whisper + Bedrock). Discovery: Whisper local vs Amazon Transcribe comparison, mlx-whisper as default engine, ScreenCaptureKit for audio capture, hybrid local/cloud architecture (audio local, LLM cloud). New tools: meeting_recorder, whisper_transcribe. CLI: yui meeting start/stop/status/list/search. Auto-minutes with Bedrock (summary, action items, decisions). Real-time analysis during meetings. Optional deps via pyproject.toml extras [meeting]. AC-40–51, E-15–18 added. |
 | 2026-02-25 | AYA | v0.6.0 — Kiro round 3 review: C-01 WER accuracy corrected (Whisper ~8-12%, Transcribe ~5-8%). C-02 ScreenCaptureKit confirmed capable of audio capture (capturesAudio API), but PyObjC stability note added + BlackHole fallback strengthened. C-03 `yui` console script added to pyproject.toml. C-04 realtime_enabled default→false, budget guard added. C-05 Meeting tool specs added (Section 4.10.1). M-01 Minutes template fixed (no attendees without diarization). M-02 pyaudio removed, sounddevice only. M-03 Whisper crash recovery (E-19). M-04 Privacy claim clarified for Transcribe opt-in. M-05 Meeting→Phase 2.5. M-06 Meeting app compatibility table added (Section 9.5.11). M-07 AgentCore Code Interpreter AC added. Minor: sliding window config, Slack mrkdwn note, FTS5 search, MCP allowlist docs, optional deps in Section 14, retention cleanup in daemon, test coverage clarification. |
 | 2026-02-25 | AYA | v0.7.0 — Name: 結（ゆい / Yui）. Repo renamed: hana-agent → yui-agent. New Section 9.5.12: Meeting Trigger UI (Menu Bar App + Global Hotkey). rumps-based macOS menu bar icon with recording state indicator (🎤/🔴/⏳/✅). pynput global hotkeys (⌘⇧R toggle, ⌘⇧S stop, ⌘⇧M open minutes). IPC via Unix domain socket (~/.yui/yui.sock). launchd auto-start support. CLI: yui menubar [--install/--uninstall]. Optional deps: rumps, pynput. AC-52 through AC-61 added. Phase 2.5 scope expanded. |
+| 2026-02-25 | AYA | v0.8.0 — New Section 5.2.1: Slack App/Bot Setup Guide (complete step-by-step). Full app manifest YAML with all required OAuth scopes (15 bot scopes). Socket Mode architecture explained (why no public URL needed, firewall-friendly). Token generation guide (Bot Token xoxb + App-Level Token xapp). Config integration (config.yaml + .env). Slack capabilities matrix (mention, DM, channels, reactions, file upload, threads). AC-62 through AC-66 added (setup validation, manifest shipping, token errors, response time, DM support). |

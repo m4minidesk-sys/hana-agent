@@ -1,0 +1,60 @@
+# 結（Yui）Slack App Manifest
+# Usage: https://api.slack.com/apps → "Create New App" → "From an app manifest" → Paste this
+#
+# This manifest configures Yui as a Socket Mode bot.
+# After creating the app, you need to:
+#   1. Generate an App-Level Token (Basic Information → App-Level Tokens → connections:write)
+#   2. Install to Workspace (OAuth & Permissions → Install to Workspace)
+#   3. Copy both tokens to ~/.yui/.env
+
+_metadata:
+  major_version: 1
+display_information:
+  name: "結 (Yui)"
+  description: "AI secretary agent — lightweight, AWS-optimized"
+  background_color: "#4A154B"
+features:
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+  bot_user:
+    display_name: "Yui"
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      # Core messaging
+      - app_mentions:read        # Respond to @Yui mentions
+      - chat:write               # Send messages
+      - chat:write.customize     # Send with custom username/icon
+      # Channel awareness
+      - channels:history         # Read public channel messages
+      - channels:read            # List channels
+      - groups:history           # Read private channel messages
+      - groups:read              # List private channels
+      - im:history               # Read DM messages
+      - im:read                  # List DMs
+      - im:write                 # Open DMs
+      - mpim:history             # Read group DM messages
+      - mpim:read                # List group DMs
+      # Reactions & threads
+      - reactions:read           # Read reactions
+      - reactions:write          # Add 👀/✅ reactions
+      # File sharing (meeting minutes)
+      - files:write              # Upload meeting minutes
+      - files:read               # Read shared files
+      # User info
+      - users:read               # Resolve user names
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention              # @Yui triggers
+      - message.channels         # Public channel messages
+      - message.groups           # Private channel messages
+      - message.im               # Direct messages
+      - message.mpim             # Group DMs
+  org_deploy_enabled: false
+  socket_mode_enabled: true      # Socket Mode — no public URL needed
+  is_hosted: false
+  token_rotation_enabled: false
