@@ -10,6 +10,8 @@ from strands.models.bedrock import BedrockModel
 
 from hana.auth.aws_credentials import validate_aws_credentials
 from hana.local_tools import exec_tool, file_ops
+from hana.local_tools import git_tool, kiro
+from hana.cloud_tools import browser, memory, search
 from hana.runtime.config_loader import load_workspace_files
 
 logger = logging.getLogger(__name__)
@@ -74,6 +76,29 @@ def _collect_tools(config: dict[str, Any]) -> list:
         file_ops.configure(file_config)
         tools.extend([file_ops.read_file, file_ops.write_file, file_ops.edit_file])
         logger.info("Loaded tools: read_file, write_file, edit_file")
+
+    # git tool
+    git_config = tools_config.get("git", {})
+    if git_config.get("enabled", True):
+        git_tool.configure(git_config)
+        tools.append(git_tool.git)
+        logger.info("Loaded tool: git")
+
+    # kiro delegation tool
+    kiro_config = tools_config.get("kiro", {})
+    if kiro_config.get("enabled", True):
+        kiro.configure(kiro_config)
+        tools.append(kiro.kiro_delegate)
+        logger.info("Loaded tool: kiro_delegate")
+
+    # Cloud tools (always available — gracefully degrade if unconfigured)
+    tools.extend([
+        browser.web_browse,
+        search.web_search,
+        memory.memory_search,
+        memory.memory_store,
+    ])
+    logger.info("Loaded cloud tools: web_browse, web_search, memory_search, memory_store")
 
     return tools
 
