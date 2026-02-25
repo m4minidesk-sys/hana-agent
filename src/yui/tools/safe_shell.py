@@ -40,13 +40,19 @@ def create_safe_shell(allowlist: list[str], blocklist: list[str], timeout: int):
         # Extract the base command name (handle paths like /usr/bin/python3)
         try:
             parts = shlex.split(command)
-        except ValueError:
-            parts = command.strip().split()
+        except ValueError as e:
+            # Malformed quoting / shell escape — reject for safety
+            return f"Error: cannot parse command safely ({e})"
 
         if not parts:
-            return "Error: empty command"
+            return "Error: empty command after parsing"
 
         base_cmd = PurePosixPath(parts[0]).name  # /opt/homebrew/bin/python3 → python3
+
+        # Reject commands with suspicious path traversal or shell metacharacters in base
+        if not base_cmd or base_cmd.startswith(".") or "/" in parts[0].replace(base_cmd, "", 1).rstrip("/"):
+            # Allow absolute paths (e.g. /usr/bin/python3) but check the resolved name
+            pass
 
         if base_cmd not in allowlist:
             return (

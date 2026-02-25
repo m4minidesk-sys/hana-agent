@@ -16,12 +16,23 @@ tools:
       - brew
     blocklist:
       - "rm -rf /"
+      - "rm -rf ~"
+      - "rm -rf $HOME"
+      - "rm -rf ."
       - sudo
       - "curl | bash"
+      - "wget | bash"
       - eval
+      - exec
       - "git push --force"
+      - "git push -f"
       - "git reset --hard"
       - "git clean -f"
+      - mkfs
+      - "dd if="
+      - "> /dev/sd"
+      - "chmod 777"
+      - "chown root"
     timeout_seconds: 30
   
   file:
