@@ -1,107 +1,48 @@
-agent:
-  model_id: "us.anthropic.claude-sonnet-4-20250514"
+model:
+  provider: bedrock
+  model_id: us.anthropic.claude-sonnet-4-20250514-v1:0
+  region: us-east-1
   max_tokens: 4096
-  temperature: 0.7
-  region: "us-east-1"
-
-workspace:
-  root: "~/.hana/workspace"
-  agents_md: "AGENTS.md"
-  soul_md: "SOUL.md"
 
 tools:
-  exec:
-    enabled: true
+  shell:
     allowlist:
-      - "ls"
-      - "cat"
-      - "grep"
-      - "find"
-      - "git"
-      - "python"
-      - "pip"
-      - "head"
-      - "tail"
-      - "wc"
-      - "echo"
-      - "pwd"
-      - "which"
-      - "env"
-      - "date"
+      - ls
+      - cat
+      - grep
+      - find
+      - python3
+      - kiro-cli
+      - brew
     blocklist:
       - "rm -rf /"
       - "rm -rf ~"
-      - "format"
-      - "shutdown"
-      - "reboot"
-      - "mkfs"
-    timeout: 30
-    max_output: 102400
-
+      - "rm -rf $HOME"
+      - "rm -rf ."
+      - sudo
+      - "curl | bash"
+      - "wget | bash"
+      - eval
+      - exec
+      - "git push --force"
+      - "git push -f"
+      - "git reset --hard"
+      - "git clean -f"
+      - mkfs
+      - "dd if="
+      - "> /dev/sd"
+      - "chmod 777"
+      - "chown root"
+    timeout_seconds: 30
+  
   file:
-    enabled: true
-    max_read_size: 51200
-    max_read_lines: 2000
-
+    workspace_root: ~/.yui/workspace
+  
   kiro:
-    enabled: true
-    binary: "~/.local/bin/kiro-cli"
-    timeout: 120
+    binary_path: ~/.local/bin/kiro-cli
+    timeout_seconds: 300
 
-  outlook:
-    enabled: false
-
-  git:
-    enabled: true
-    allowed_commands:
-      - "status"
-      - "log"
-      - "diff"
-      - "add"
-      - "commit"
-      - "push"
-      - "pull"
-      - "branch"
-      - "checkout"
-      - "stash"
-      - "tag"
-      - "remote"
-      - "fetch"
-
-channels:
-  cli:
-    enabled: true
-    prompt: "hana> "
-    history_file: "~/.hana/history"
-
-  slack:
-    enabled: false
-    app_token: "${SLACK_APP_TOKEN}"
-    bot_token: "${SLACK_BOT_TOKEN}"
-    default_channel: ""
-
-session:
-  backend: "sqlite"
-  db_path: "~/.hana/sessions.db"
-  s3_sync:
-    enabled: false
-    bucket: ""
-    prefix: "hana/sessions/"
-
-heartbeat:
-  enabled: false
-  interval_minutes: 30
-  tasks: []
-
-logging:
-  level: "INFO"
-  file: "~/.hana/logs/hana.log"
-  cloudwatch:
-    enabled: false
-    log_group: "/hana/agent"
-    region: "us-east-1"
-
-guardrails:
-  enabled: false
-  guardrail_id: ""
-  guardrail_version: "DRAFT"
+runtime:
+  session:
+    compaction_threshold: 0.8
+    keep_recent_messages: 5

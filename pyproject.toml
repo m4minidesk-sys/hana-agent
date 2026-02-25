@@ -54,9 +54,13 @@ all = [
 ]
 
 [project.scripts]
-yui = "yui.__main__:main"
+yui = "yui.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
+where = ["src"]
 include = ["yui*"]
 
 [tool.ruff]
