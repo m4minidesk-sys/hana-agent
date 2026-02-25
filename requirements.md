@@ -2,7 +2,7 @@
 
 > Lightweight, AWS-optimized AI agent orchestrator inspired by OpenClaw.
 > Name: 結（ゆい / Yui） — meaning "to tie, to bind, to connect"
-> Version: 0.9.0-draft | Last updated: 2026-02-26 | Reviewed by: Kiro CLI (v1.26.2, 3 rounds) + han feedback
+> Version: 0.10.0-draft | Last updated: 2026-02-26 | Reviewed by: Kiro CLI (v1.26.2, 4 rounds) + han feedback
 
 ---
 
@@ -68,7 +68,12 @@ Before any implementation begins, verify all SDK assumptions:
 - [ ] Confirm `strands-agents` package name and import path (`from strands import Agent`)
 - [ ] List available tools in `strands-agents-tools` and verify exact function signatures
 - [ ] Verify `BedrockModel` constructor parameters for Guardrails integration
+- [ ] Verify `BedrockModel` `guardrail_latest_message` parameter exists and works as documented (Kiro R4 C-03)
 - [ ] Confirm `shell` tool's built-in allowlist/blocklist capability and configuration API
+- [ ] Verify `GraphBuilder` supports cyclic graphs with conditional edges (`add_edge(condition=callable)`) (Kiro R4 C-01)
+- [ ] Test minimal reflexion loop: node A → node B → [condition] → node A with `max_node_executions` (Kiro R4 C-01)
+- [ ] Verify `@tool` decorator works with subprocess-based tools (timeout handling, stderr capture) (Kiro R4 C-02)
+- [ ] Test tool timeout handling with long-running subprocess (>60s) (Kiro R4 C-02)
 - [ ] Document any API differences from assumptions in this spec
 - [ ] Test minimal "hello world" agent with Bedrock in target AWS region
 
@@ -333,7 +338,7 @@ SQLite handles ephemeral session data. AgentCore Memory handles durable knowledg
 
 | Tool | Purpose | Implementation notes |
 |---|---|---|
-| `kiro_delegate` | Delegate coding tasks to Kiro CLI | `subprocess.run(["kiro-cli", "chat", "--no-interactive", ...])`, ANSI strip, timeout 300s, **output truncated at 50,000 chars**. **Kiro CLI must be installed** — Yui checks at startup and provides install instructions if missing |
+| `kiro_delegate` | Delegate coding tasks to Kiro CLI | `subprocess.run(["kiro-cli", "chat", "--no-interactive", ...])`, ANSI strip, timeout 300s, **output truncated at 50,000 chars** (≈12,500 tokens — fits within Claude's context window with room for conversation history). **Kiro CLI must be installed** — Yui checks at startup and provides install instructions if missing |
 | `git_tool` | Git operations (status, add, commit, push, log, diff, branch, checkout) | Wrapper around `subprocess.run(["git", ...])` with allowlisted subcommands |
 
 ### 4.10.1 Meeting Tools (Phase 2)
@@ -523,7 +528,7 @@ Yui only receives messages from channels it's been invited to (except DMs).
 
 #### Acceptance Criteria (Slack Setup)
 
-- [ ] AC-62: `yui setup slack` CLI command validates tokens and tests connection
+- [ ] AC-62: `yui setup slack` CLI command validates tokens, tests connection, AND verifies all required OAuth scopes are granted (compares installed scopes against manifest)
 - [ ] AC-63: App manifest YAML is shipped in repo as `slack-manifest.yaml` for one-click setup
 - [ ] AC-64: Missing/invalid tokens at startup → clear error message with setup instructions
 - [ ] AC-65: Yui responds to @mention within 3 seconds (👀 reaction) in any invited channel
@@ -545,6 +550,10 @@ Yui only receives messages from channels it's been invited to (except DMs).
 - [ ] AC-78: Kiro CLI availability check at startup — clear error message if not installed
 - [ ] AC-79: Cross-review findings logged to `memory/reviews/` for retrospective analysis
 - [ ] AC-80: Heartbeat OODA loop: Observe (env check) → Orient (analyze) → Decide (plan) → Act (execute) cycle completes within 60 seconds
+- [ ] AC-81: `yui meeting start` performs 5-second audio quality test before recording — warns user if RMS amplitude below threshold or clipping detected
+- [ ] AC-82: Conflict resolution protocol: Yui can CHALLENGE Kiro findings; unresolved Criticals escalate to han
+- [ ] AC-83: Self-improvement rollback: auto-revert AGENTS.md PR if metrics degrade >20% within 24h shadow period
+- [ ] AC-84: Failure recovery: partial work saved to `memory/incomplete/` when Reflexion loop hits execution limit
 
 ---
 
@@ -810,6 +819,10 @@ Kiro: design.md → Yui: review (alignment with requirements,
 from strands import Agent
 from strands.multiagent import GraphBuilder
 
+# Condition functions (implementation sketch):
+# def has_critical_or_major(state): return any severity in ["critical","major"] in state results
+# def is_approved(state): return not has_critical_or_major(state)
+
 # Yui ⇔ Kiro Reflexion Graph
 builder = GraphBuilder()
 
@@ -887,6 +900,8 @@ improvements:
     suggestion: "Add 'verify API availability' to spec checklist"
 ```
 
+**Schema validation** (Kiro R4 m-08): Evaluation files validated against JSON Schema (`schema/evaluation.schema.json`) before writing. Invalid evaluations logged to `memory/invalid/` for debugging, never silently dropped.
+
 #### 8.5.2 Periodic Self-Improvement (Cron-driven)
 
 | Frequency | Action | Output |
@@ -918,7 +933,7 @@ Improve  → Propose rule changes if recurring failures detected
 |---|---|---|
 | **AGENTS.md changes** | PR only — han review required | Phase 2+ |
 | **Destructive operations** | Maintenance window only (han-defined hours) | Phase 3 |
-| **Cost budget** | `max_monthly_bedrock_usd` in config.yaml | Phase 0 |
+| **Cost budget** | `max_monthly_bedrock_usd` in config.yaml. Yui estimates cost locally by tracking token counts (input + output) per API call and applying Bedrock pricing. Resets monthly. Warning at 80%, hard stop at 100%. Override: `yui budget reset`. | Phase 0 |
 | **Loop limits** | `max_node_executions`, `execution_timeout` in GraphBuilder | Phase 2 |
 | **Content safety** | Bedrock Guardrails (Section 9) | Phase 3 |
 | **Secret hygiene** | Never output API keys/tokens to chat or logs | Phase 0 |
@@ -936,6 +951,49 @@ Based on AYA ecosystem empirical data (2026-02):
 - Kiro reviews Yui's requirements (not just code) — per han directive
 - Cyclic graph with conditional edges enables automated revision loops
 - `max_node_executions` prevents infinite loops while allowing sufficient iteration
+
+### 8.8 Failure Modes & Recovery (Kiro R4 C-04)
+
+| Failure | Detection | Recovery |
+|---|---|---|
+| **Kiro CLI crash mid-review** | Subprocess exit code ≠ 0 or timeout | Save partial review output to `memory/incomplete/<task_id>/`, notify user, mark task as `needs_manual_review` |
+| **Reflexion loop hits max_node_executions** | GraphBuilder raises limit error | Save all intermediate outputs (each node's result) to `memory/incomplete/<task_id>/`, notify user with summary of findings so far |
+| **Yui-Kiro deadlock** (both keep rejecting each other) | 3 consecutive cycles with same findings repeated (no delta between review rounds) | Escalate to han with both agents' perspectives attached, pause task pending human decision |
+| **Bedrock API failure during eval recording** | boto3 ClientError | Log evaluation to local file only (`memory/evaluations/`), retry cloud upload on next heartbeat |
+| **Kiro CLI not found at runtime** | `FileNotFoundError` on subprocess | E-20: Clear error message with install instructions, mark task as blocked |
+| **Token budget exceeded mid-task** | Running token count > budget | Complete current agent loop iteration, save state, refuse new tool calls, notify user |
+
+### 8.9 Level Transition Criteria (Kiro R4 M-01)
+
+| From → To | Trigger Criteria | Who Decides |
+|---|---|---|
+| L0 → L1 | Initial setup complete, first successful task | Automatic |
+| L1 → L2 | 20+ successful tasks with <10% han intervention rate | Han approval |
+| L2 → L3 | 50+ tasks, Kiro cross-review catches 90%+ of issues before han review, 0 security incidents | Han approval |
+| L3 → L4 | 100+ tasks, self-evaluation accuracy >85% (compared to han's post-review assessment), weekly retrospective quality validated | Han approval |
+| Any → L0 | Security incident, repeated failures (3+ in 24h), han explicit request | Automatic or han |
+
+**Note**: Level transitions are one-way upgrades (except emergency downgrade). Stored in `config.yaml` as `autonomy.level`.
+
+### 8.10 Conflict Resolution Protocol (Kiro R4 M-04)
+
+When Yui and Kiro disagree during cross-review:
+
+1. **Challenge mechanism**: If Yui disagrees with Kiro's Critical/Major finding, Yui responds with `CHALLENGE: <reasoning>` in the graph state
+2. **Re-evaluation**: Kiro must re-evaluate the challenged finding with additional context provided by Yui
+3. **Escalation**: If finding remains Critical after re-evaluation, escalate to han for tie-breaking
+4. **Minor dismissal**: Minor findings can be dismissed by Yui with logged justification (stored in `memory/reviews/` for retrospective analysis)
+5. **Logging**: All challenges and resolutions logged for pattern analysis
+
+### 8.11 Self-Improvement Validation & Rollback (Kiro R4 M-06)
+
+After an AGENTS.md improvement PR is merged:
+
+1. **Shadow mode** (24 hours): New rules applied, but outcomes compared against simulated old-rules behavior
+2. **Metrics tracked**: Kiro review cycle count, han intervention rate, task completion time
+3. **Auto-revert trigger**: If new rules cause >20% increase in review cycles OR >15% increase in han interventions compared to pre-merge baseline → auto-revert PR, log to `memory/rollbacks/`
+4. **Manual revert**: Han can always `yui rules revert <pr_number>` to undo a specific change
+5. **Cool-down**: After a rollback, no new AGENTS.md proposals for 7 days (to prevent thrashing)
 
 ---
 
@@ -957,7 +1015,12 @@ Based on AYA ecosystem empirical data (2026-02):
 ### 10.1 Behavior
 
 - Reads `~/.yui/workspace/HEARTBEAT.md` (if exists) at configurable interval
-- **File integrity** (Kiro review M-04): On first load, compute SHA256 hash. On subsequent loads, verify hash. If changed externally (not by agent), log warning. HEARTBEAT.md must be owned by current user with 600 permissions; reject if world-writable.
+- **File integrity** (Kiro review M-04, strengthened R4 M-05): On first load, compute SHA256 hash. On subsequent loads, verify hash. If changed externally (not by agent):
+  1. **Stop** heartbeat execution immediately — do NOT process modified content
+  2. **Notify** han via Slack (if configured) or log critical alert to `memory/security/`
+  3. **Require** explicit user action: `yui heartbeat reset` to re-baseline hash and resume
+  4. **Never** auto-accept a modified HEARTBEAT.md — treat as potential prompt injection
+  - HEARTBEAT.md must be owned by current user with 600 permissions; reject if world-writable.
 - **Content handling**: Heartbeat content is treated as **user input** (not system prompt) — goes through Bedrock Guardrails if enabled
 - Sends content to agent as a system event
 - Agent responds autonomously (e.g., check Slack for unread messages, run scheduled tasks)
@@ -1205,7 +1268,7 @@ yui meeting search "keyword"         # Search across meeting transcripts (SQLite
 
 | App | Audio Capture | Known Issues |
 |---|---|---|
-| **Amazon Chime** | ✅ Supported | Standard audio routing |
+| **Amazon Chime** | ✅ Supported | ⚠️ Disable "Mute system audio during screen share" in Chime settings — Chime mutes system audio output during screen sharing by default, which breaks audio capture |
 | **Zoom** | ✅ Supported | May need "Share Computer Sound" enabled in Zoom settings for ScreenCaptureKit. BlackHole works without extra config. |
 | **Microsoft Teams** | ✅ Supported | Standard audio routing |
 | **Google Meet** (browser) | ✅ Supported | Captures browser audio output |
@@ -1232,7 +1295,7 @@ A persistent status bar icon shows recording state at a glance and provides one-
 - macOS notification on recording start/stop/minutes ready
 - Recording timer displayed in menu dropdown
 - "Last Minutes" opens most recent minutes file in default editor
-- Menu bar app communicates with Yui daemon via local Unix domain socket (`~/.yui/yui.sock`)
+- Menu bar app communicates with Yui daemon via local Unix domain socket (default: `~/.yui/yui.sock`, configurable via `runtime.socket_path` in config.yaml for multi-instance setups)
 
 **Implementation**: `rumps` library (Ridiculously Uncomplicated macOS Python Statusbar apps)
 - Pure Python, PyObjC-based, ~50 lines of code
@@ -1502,7 +1565,7 @@ all = ["yui-agent[meeting,ui,hotkey]"]
 | `rich` | ≥13.0 | CLI formatted output | MIT |
 | `mcp` | ≥1.0.0 | MCP protocol client (for MCP server integration) | MIT |
 
-**Total: 9 direct dependencies** (vs OpenClaw's 54)
+**Total: 8 direct dependencies** (vs OpenClaw's 54). `slack-sdk` is transitive via `slack-bolt` (not counted separately). `sqlite3` is Python stdlib.
 
 **Optional dependencies (meeting feature):**
 
@@ -1531,7 +1594,7 @@ all = ["yui-agent[meeting,ui,hotkey]"]
 | Q-04 | Should Heartbeat results be posted to a Slack channel? | Phase 3 behavior | Open |
 | Q-05 | ~~MCP tool consumption — should Yui support loading tools from MCP servers?~~ | Future extensibility | Deferred to Phase 4+ |
 | Q-06 | AgentCore Code Interpreter availability — GA in target region? | Phase 2 feasibility | Open — must verify in Pre-Phase 0 SDK Verification Gate |
-| Q-07 | AgentCore Memory — namespace isolation strategy for multi-user? | Phase 2+ | Open |
+| Q-07 | AgentCore Memory — namespace isolation strategy for multi-user? If multiple users share a Bedrock account, how to prevent memory leakage between users? Proposed: prefix all memory keys with `user_id` hash. | Phase 2+ | Open |
 
 ---
 
@@ -1562,3 +1625,4 @@ all = ["yui-agent[meeting,ui,hotkey]"]
 | 2026-02-25 | AYA | v0.7.0 — Name: 結（ゆい / Yui）. Repo renamed: hana-agent → yui-agent. New Section 9.5.12: Meeting Trigger UI (Menu Bar App + Global Hotkey). rumps-based macOS menu bar icon with recording state indicator (🎤/🔴/⏳/✅). pynput global hotkeys (⌘⇧R toggle, ⌘⇧S stop, ⌘⇧M open minutes). IPC via Unix domain socket (~/.yui/yui.sock). launchd auto-start support. CLI: yui menubar [--install/--uninstall]. Optional deps: rumps, pynput. AC-52 through AC-61 added. Phase 2.5 scope expanded. |
 | 2026-02-25 | AYA | v0.8.0 — New Section 5.2.1: Slack App/Bot Setup Guide (complete step-by-step). Full app manifest YAML with all required OAuth scopes (15 bot scopes). Socket Mode architecture explained (why no public URL needed, firewall-friendly). Token generation guide (Bot Token xoxb + App-Level Token xapp). Config integration (config.yaml + .env). Slack capabilities matrix (mention, DM, channels, reactions, file upload, threads). AC-62 through AC-66 added (setup validation, manifest shipping, token errors, response time, DM support). |
 | 2026-02-26 | AYA | v0.9.0 — New Section 8: Autonomy Architecture (Phase 2–3). Single-agent ceiling analysis. Autonomy levels L0–L4 defined. Layer 1: Strands Agent Loop (ReAct). Layer 2: Yui ⇔ Kiro Cross-Review via GraphBuilder Reflexion Loop — requirements review by Kiro (per han directive), coding workflow, design review. Kiro CLI tools (`kiro_review`, `kiro_implement`) as Strands @tool. Layer 3: Self-Evaluation + Self-Improvement (task-level eval, weekly AGENTS.md PR proposals, OODA loop). Guardrails: AGENTS.md changes via PR only, cost budget, loop limits, maintenance window. Evidence from AYA ecosystem. Sections 8–16 renumbered to 9–17. AC-67 through AC-80 added (14 new, cumulative 80 ACs). |
+| 2026-02-26 | AYA | v0.10.0 — Kiro review round 4: 20 findings (C4/M7/m9). ALL FIXED. C-01/C-02/C-03: Pre-Phase 0 SDK verification expanded (GraphBuilder cycles, @tool subprocess, Guardrails API). C-04: New Section 8.8 Failure Modes & Recovery (6 failure scenarios with detection/recovery). M-01: New Section 8.9 Level Transition Criteria (L0→L4 concrete metrics). M-02: AC-62 expanded with OAuth scope verification. M-03: AC-81 audio quality pre-test. M-04: New Section 8.10 Conflict Resolution Protocol (CHALLENGE mechanism). M-05: HEARTBEAT.md integrity check hardened (stop+notify+require reset). M-06: New Section 8.11 Self-Improvement Validation & Rollback (shadow mode, auto-revert, cool-down). M-07: Dependency count corrected (8 direct). Minors: code imports, Chime audio note, cost tracking mechanism, output truncation rationale, socket path configurable, Q-07 clarified, eval schema validation. AC-81 through AC-84 added (cumulative 84 ACs). |
