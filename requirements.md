@@ -2,7 +2,7 @@
 
 > Lightweight, AWS-optimized AI agent orchestrator inspired by OpenClaw.
 > Name: 結（ゆい / Yui） — meaning "to tie, to bind, to connect"
-> Version: 0.8.0-draft | Last updated: 2026-02-25 | Reviewed by: Kiro CLI (v1.26.2, 3 rounds) + han feedback
+> Version: 0.9.0-draft | Last updated: 2026-02-26 | Reviewed by: Kiro CLI (v1.26.2, 3 rounds) + han feedback
 
 ---
 
@@ -529,6 +529,23 @@ Yui only receives messages from channels it's been invited to (except DMs).
 - [ ] AC-65: Yui responds to @mention within 3 seconds (👀 reaction) in any invited channel
 - [ ] AC-66: DM messages processed without @mention prefix
 
+#### Acceptance Criteria (Autonomy — Section 8)
+
+- [ ] AC-67: `kiro_review` tool delegates file review to Kiro CLI and returns structured Critical/Major/Minor findings
+- [ ] AC-68: `kiro_implement` tool delegates implementation to Kiro CLI with spec file as input
+- [ ] AC-69: Yui ⇔ Kiro Reflexion Graph executes coding workflow: draft → review → [revise loop] → complete
+- [ ] AC-70: Yui ⇔ Kiro Reflexion Graph executes requirements review workflow: Yui drafts → Kiro reviews → [revise loop] → approved
+- [ ] AC-71: GraphBuilder `max_node_executions` prevents infinite review loops (max 4 cycles = 8 node executions)
+- [ ] AC-72: GraphBuilder `execution_timeout` kills stalled review loops after 10 minutes
+- [ ] AC-73: Task-level self-evaluation recorded to `memory/evaluations/` after each task completion
+- [ ] AC-74: Weekly cron job analyzes evaluation patterns and proposes AGENTS.md improvements as a PR
+- [ ] AC-75: AGENTS.md modifications are NEVER applied directly — always via PR requiring han review
+- [ ] AC-76: Autonomy level (L0–L4) configurable in `config.yaml` with per-task override
+- [ ] AC-77: Cost budget guard: `max_monthly_bedrock_usd` enforced; warning at 80%, hard stop at 100%
+- [ ] AC-78: Kiro CLI availability check at startup — clear error message if not installed
+- [ ] AC-79: Cross-review findings logged to `memory/reviews/` for retrospective analysis
+- [ ] AC-80: Heartbeat OODA loop: Observe (env check) → Orient (analyze) → Decide (plan) → Act (execute) cycle completes within 60 seconds
+
 ---
 
 ## 6. Session Management (Phase 1)
@@ -687,7 +704,242 @@ runtime:
 
 ---
 
-## 8. Bedrock Guardrails (Phase 3)
+## 8. Autonomy Architecture (Phase 2–3)
+
+### 8.1 Problem: Single-Agent Ceiling
+
+A single LLM agent (even Claude on Bedrock) has inherent limitations:
+
+| Limitation | Description |
+|---|---|
+| **Self-bias** | Agent evaluating its own output tends to be lenient |
+| **Knowledge closure** | Bounded by training data + tool outputs |
+| **Quality ceiling** | Same model writing and reviewing → quality plateaus |
+| **Blind spot fixation** | Same LLM has the same systematic blind spots |
+
+**Conclusion**: A single agent cannot exceed its own capability boundary. Cross-LLM review (Yui's Claude ⇔ Kiro's independent LLM) breaks through this ceiling by introducing diverse reasoning perspectives and mutual error detection.
+
+### 8.2 Autonomy Levels
+
+| Level | Name | Description | Human Involvement |
+|---|---|---|---|
+| L0 | Manual | Han directs all actions. Yui executes only. | 100% |
+| L1 | Assisted | Yui proposes, han approves, Yui executes. | ~70% |
+| L2 | Supervised | Yui executes autonomously, reports results. Han intervenes on anomalies only. | ~30% |
+| L3 | Autonomous | Yui + Kiro mutual review loop. AGENTS.md changes via PR (han review). | ~10% |
+| L4 | Self-Evolving | L3 + periodic self-evaluation → automatic rule improvement proposals. Han weekly review only. | ~5% |
+
+**Progression**: Phase 0–1: L1–L2 → Phase 2+: L2–L3 → Stable operation: L3–L4
+
+### 8.3 Layer 1: Single-Agent Autonomy (Strands Agent Loop)
+
+The Strands SDK `Agent` class handles the core autonomous loop:
+
+```
+Agent Loop (ReAct pattern):
+  1. Receive task
+  2. Reason about approach
+  3. Select and call tools
+  4. Observe results
+  5. Reflect and decide: done? or iterate?
+  6. Respond (or loop back to step 2)
+```
+
+**Built-in capabilities**:
+- Tool selection and invocation (Strands toolbelt)
+- Error recovery within agent loop (retry with reformulated approach)
+- Streaming output for real-time feedback
+- Session/conversation management
+
+**Limitations addressed by Layer 2**: Self-review bias, quality ceiling, systematic blind spots.
+
+### 8.4 Layer 2: Yui ⇔ Kiro Cross-Review (Reflexion Loop)
+
+**Core principle**: Yui (Claude via Bedrock) handles *What/Why* (requirements, review, quality). Kiro CLI (independent LLM) handles *How* (design, implementation, code review). Each reviews the other's output.
+
+#### 8.4.1 Architecture
+
+```
+┌─ Yui Agent (Claude via Bedrock) ─────────────────────┐
+│ Roles:                                                │
+│   • Requirements authoring (What/Why)                 │
+│   • Acceptance criteria review                        │
+│   • Quality gate enforcement                          │
+│   • Self-evaluation and memory management             │
+│ Strengths: Context retention, dialogue, judgment       │
+└──────────────────┬────────────────────────────────────┘
+                   │ ← Strands GraphBuilder Reflexion Loop →
+┌─ Kiro CLI (Independent LLM) ─────────────────────────┐
+│ Roles:                                                │
+│   • Design document authoring (How)                   │
+│   • Code implementation                               │
+│   • Requirements review (technical feasibility)       │
+│   • Code review                                       │
+│ Strengths: Coding specialization, project structure   │
+└───────────────────────────────────────────────────────┘
+```
+
+#### 8.4.2 Cross-Review Workflows
+
+**Workflow A: Coding Task (fullspec)**
+```
+Yui: requirements.md → Kiro: design.md + tasks.md + implement
+  → Yui: AC review (acceptance criteria check)
+  → [needs_revision?] → Kiro: fix → Yui: re-review
+  → [approved?] → PR → merge
+```
+
+**Workflow B: Requirements Review (NEW — han directive)**
+```
+Yui: draft requirements.md → Kiro: review (technical feasibility,
+  missing edge cases, API assumptions, dependency risks)
+  → Yui: address Kiro findings → Kiro: re-review
+  → [approved?] → han final review → approved
+```
+
+**Workflow C: Design Review**
+```
+Kiro: design.md → Yui: review (alignment with requirements,
+  security implications, cost analysis)
+  → Kiro: revise → Yui: re-review → approved
+```
+
+#### 8.4.3 Implementation with Strands GraphBuilder
+
+```python
+from strands import Agent
+from strands.multiagent import GraphBuilder
+
+# Yui ⇔ Kiro Reflexion Graph
+builder = GraphBuilder()
+
+# Nodes
+builder.add_node(yui_spec_agent, "yui_draft")      # Yui drafts spec
+builder.add_node(kiro_review_node, "kiro_review")   # Kiro reviews spec
+builder.add_node(yui_revise_agent, "yui_revise")    # Yui addresses findings
+builder.add_node(kiro_recheck_node, "kiro_recheck") # Kiro re-reviews
+builder.add_node(complete_node, "complete")         # Done
+
+# Edges
+builder.add_edge("yui_draft", "kiro_review")
+builder.add_edge("kiro_review", "yui_revise",
+    condition=has_critical_or_major)     # Issues found → revise
+builder.add_edge("kiro_review", "complete",
+    condition=is_approved)               # No issues → done
+builder.add_edge("yui_revise", "kiro_recheck")
+builder.add_edge("kiro_recheck", "yui_revise",
+    condition=has_critical_or_major)     # Still issues → iterate
+builder.add_edge("kiro_recheck", "complete",
+    condition=is_approved)               # Clean → done
+
+# Safety
+builder.set_max_node_executions(8)       # Max 4 review cycles
+builder.set_execution_timeout(600)       # 10 minute timeout
+```
+
+#### 8.4.4 Kiro CLI Integration as Strands Tool
+
+```python
+@tool
+def kiro_review(file_path: str, review_focus: str) -> str:
+    """Delegate review to Kiro CLI (independent LLM).
+
+    Args:
+        file_path: Path to file to review
+        review_focus: What aspects to focus on (e.g. "technical feasibility",
+                      "missing edge cases", "API assumptions")
+    Returns:
+        Structured review with Critical/Major/Minor findings
+    """
+    result = subprocess.run(
+        ["kiro-cli", "chat", "--no-interactive", "--trust-all-tools",
+         f"Review {file_path} focusing on: {review_focus}. "
+         "Classify findings as Critical/Major/Minor."],
+        capture_output=True, timeout=120
+    )
+    return result.stdout
+
+@tool
+def kiro_implement(spec_path: str, task_description: str) -> str:
+    """Delegate implementation to Kiro CLI."""
+    ...
+```
+
+### 8.5 Layer 3: Self-Evaluation & Self-Improvement
+
+#### 8.5.1 Task-Level Self-Evaluation
+
+After each task completion, Yui records:
+```yaml
+# memory/evaluations/YYYY-MM-DD_task_id.yaml
+task_id: "yui-42"
+timestamp: "2026-03-01T10:30:00+09:00"
+outcome: "success"  # success | partial | failure
+metrics:
+  kiro_review_rounds: 2
+  critical_findings: 1
+  time_to_complete_minutes: 45
+lessons:
+  - "API endpoint assumptions need verification before spec finalization"
+  - "Missing error handling for network timeout in initial draft"
+improvements:
+  - target: "AGENTS.md"
+    suggestion: "Add 'verify API availability' to spec checklist"
+```
+
+#### 8.5.2 Periodic Self-Improvement (Cron-driven)
+
+| Frequency | Action | Output |
+|---|---|---|
+| Daily | Review today's task evaluations → extract patterns | `memory/YYYY-MM-DD.md` |
+| Weekly | Analyze week's success/failure patterns → propose AGENTS.md improvements | PR to AGENTS.md |
+| Monthly | Full retrospective → tool usage audit → dependency check | Report to han |
+
+**Critical safety constraint**: All AGENTS.md modifications are proposed as PRs. Han must review and approve before merge. Yui never directly modifies its own behavioral rules.
+
+#### 8.5.3 OODA Loop Integration
+
+```
+Observe  → Heartbeat: check environment state, unread messages, stalled tasks
+Orient   → Analyze: compare current state with goals and past patterns
+Decide   → Plan: select next action based on priority and autonomy level
+Act      → Execute: run task via agent loop with Kiro cross-review
+  ↓
+Record   → Log outcome to memory/
+Reflect  → Self-evaluate against acceptance criteria
+Improve  → Propose rule changes if recurring failures detected
+  ↓
+[Loop back to Observe]
+```
+
+### 8.6 Guardrails & Safety (Autonomy Constraints)
+
+| Constraint | Mechanism | Phase |
+|---|---|---|
+| **AGENTS.md changes** | PR only — han review required | Phase 2+ |
+| **Destructive operations** | Maintenance window only (han-defined hours) | Phase 3 |
+| **Cost budget** | `max_monthly_bedrock_usd` in config.yaml | Phase 0 |
+| **Loop limits** | `max_node_executions`, `execution_timeout` in GraphBuilder | Phase 2 |
+| **Content safety** | Bedrock Guardrails (Section 9) | Phase 3 |
+| **Secret hygiene** | Never output API keys/tokens to chat or logs | Phase 0 |
+| **External data send** | Requires han approval for new external endpoints | Phase 0 |
+
+### 8.7 Why Yui + Kiro > Single Agent (Evidence)
+
+Based on AYA ecosystem empirical data (2026-02):
+- AYA(requirements) × Kiro(implementation) × IRIS(review) improved code quality from ~60% first-pass to ~95%
+- Cross-LLM review caught issues that self-review missed in 100% of cases tested
+- Reflexion loop (max 3 iterations) resolved all Critical findings before merge
+
+**Applied to Yui**:
+- Same pattern, but implemented programmatically via Strands GraphBuilder
+- Kiro reviews Yui's requirements (not just code) — per han directive
+- Cyclic graph with conditional edges enables automated revision loops
+- `max_node_executions` prevents infinite loops while allowing sufficient iteration
+
+---
+
+## 9. Bedrock Guardrails (Phase 3)
 
 - Integrated via `BedrockModel(guardrail_id=..., guardrail_version=..., guardrail_latest_message=...)`
 - **Security trade-off** (Kiro review C-02):
@@ -700,9 +952,9 @@ runtime:
 
 ---
 
-## 9. Heartbeat (Phase 3)
+## 10. Heartbeat (Phase 3)
 
-### 9.1 Behavior
+### 10.1 Behavior
 
 - Reads `~/.yui/workspace/HEARTBEAT.md` (if exists) at configurable interval
 - **File integrity** (Kiro review M-04): On first load, compute SHA256 hash. On subsequent loads, verify hash. If changed externally (not by agent), log warning. HEARTBEAT.md must be owned by current user with 600 permissions; reject if world-writable.
@@ -711,7 +963,7 @@ runtime:
 - Agent responds autonomously (e.g., check Slack for unread messages, run scheduled tasks)
 - Active hours restriction prevents execution during sleep hours
 
-### 9.2 Implementation
+### 10.2 Implementation
 
 - Python `threading.Timer` or `schedule` library
 - Runs in-process (not a separate process)
@@ -720,13 +972,13 @@ runtime:
 
 ---
 
-## 9.5 Meeting Transcription & Automatic Minutes (Phase 2)
+## 10.5 Meeting Transcription & Automatic Minutes (Phase 2)
 
-### 9.5.1 Overview
+### 10.5.1 Overview
 
 Yui provides automatic meeting transcription, intelligent minute generation, and real-time meeting analysis using a **hybrid local/cloud architecture**: audio capture and speech-to-text run locally (privacy + low latency), while LLM-powered analysis runs via Bedrock (intelligence + quality).
 
-### 9.5.2 Architecture: Local/Cloud Split
+### 10.5.2 Architecture: Local/Cloud Split
 
 ```
 ┌─ LOCAL (Mac) ─────────────────────────────────┐
@@ -765,7 +1017,7 @@ Yui provides automatic meeting transcription, intelligent minute generation, and
 
 **Decision: Whisper local is default.** Primary advantages: privacy (audio never leaves device), zero cost, and offline capability. Amazon Transcribe may have better accuracy in some enterprise scenarios but comes with per-minute cost and requires network. Available as opt-in fallback via `meeting.transcribe.provider: aws_transcribe`.
 
-### 9.5.3 Audio Capture (macOS)
+### 10.5.3 Audio Capture (macOS)
 
 **Primary method: ScreenCaptureKit** (macOS 13+)
 - Captures system audio directly via `SCStreamConfiguration.capturesAudio = true` (Apple WWDC22, confirmed API)
@@ -819,7 +1071,7 @@ meeting:
     slack_notify: true                # Post minutes to Slack after meeting
 ```
 
-### 9.5.4 Whisper Engine Options
+### 10.5.4 Whisper Engine Options
 
 | Engine | Package | Apple Silicon Optimization | Install |
 |---|---|---|---|
@@ -829,7 +1081,7 @@ meeting:
 
 **Default: mlx-whisper** — best Python integration, native Apple Silicon optimization, easy install via pip.
 
-### 9.5.5 Real-time Meeting Analysis (Bedrock)
+### 10.5.5 Real-time Meeting Analysis (Bedrock)
 
 During a meeting, Yui performs live analysis by sending transcript chunks to Bedrock:
 
@@ -853,7 +1105,7 @@ that were asked but not answered, (4) topics that may need follow-up."
 - 📊 Detect topic shifts ("We moved from budget to hiring")
 - ⚠️ Alert on decisions ("Team decided to use Kafka instead of SQS")
 
-### 9.5.6 Automatic Minutes Generation (Post-meeting)
+### 10.5.6 Automatic Minutes Generation (Post-meeting)
 
 When the meeting recording stops, Yui automatically generates structured minutes:
 
@@ -894,7 +1146,7 @@ When the meeting recording stops, Yui automatically generates structured minutes
 5. If `slack_notify: true` → Post summary to Slack channel (tables converted to plain text for Slack mrkdwn compatibility)
 6. If `outlook_mcp` available → Create follow-up calendar events for action items
 
-### 9.5.7 Speaker Diarization (optional)
+### 10.5.7 Speaker Diarization (optional)
 
 **Option A: pyannote.audio (local, recommended)**
 - Open-source, runs locally
@@ -911,7 +1163,7 @@ When the meeting recording stops, Yui automatically generates structured minutes
 
 **Default: No diarization** (Phase 2 MVP). Speaker labels are a Phase 4+ enhancement.
 
-### 9.5.8 Meeting Lifecycle
+### 10.5.8 Meeting Lifecycle
 
 ```
 yui meeting start                    # Start recording + transcription
@@ -933,7 +1185,7 @@ yui meeting show <id>                # Show transcript + minutes
 yui meeting search "keyword"         # Search across meeting transcripts (SQLite FTS5 full-text index)
 ```
 
-### 9.5.9 Privacy & Security
+### 10.5.9 Privacy & Security
 
 - **Audio stays local** (default): When using Whisper (default), raw audio is processed on-device and never uploaded. If using Amazon Transcribe (opt-in via `meeting.transcribe.provider: aws_transcribe`), audio is streamed to AWS.
 - **Text to Bedrock**: Only text transcripts are sent to Bedrock for analysis (within AWS VPC).
@@ -941,7 +1193,7 @@ yui meeting search "keyword"         # Search across meeting transcripts (SQLite
 - **Retention**: Configurable auto-delete after N days (`meeting.retention_days: 90`).
 - **No recording without explicit start**: Yui NEVER records audio without explicit `yui meeting start` command.
 
-### 9.5.10 Dependencies (meeting feature)
+### 10.5.10 Dependencies (meeting feature)
 
 | Package | Purpose | License | Phase |
 |---|---|---|---|
@@ -949,7 +1201,7 @@ yui meeting search "keyword"         # Search across meeting transcripts (SQLite
 | `sounddevice` | Audio capture from system/mic (preferred over pyaudio — no C dependency issues on macOS) | MIT | Phase 2.5 |
 | `numpy` | Audio buffer processing | BSD | Phase 2.5 |
 
-### 9.5.11 Meeting App Compatibility
+### 10.5.11 Meeting App Compatibility
 
 | App | Audio Capture | Known Issues |
 |---|---|---|
@@ -961,7 +1213,7 @@ yui meeting search "keyword"         # Search across meeting transcripts (SQLite
 
 **Note**: Audio capture quality depends on system audio output settings. Headphone users may need to configure BlackHole as a multi-output device to capture audio while still hearing it.
 
-### 9.5.12 Meeting Trigger UI — Menu Bar App + Global Hotkey (Phase 2.5)
+### 10.5.12 Meeting Trigger UI — Menu Bar App + Global Hotkey (Phase 2.5)
 
 Meeting recording can be triggered via CLI (`yui meeting start/stop`), but for day-to-day use a **macOS menu bar icon** and **global keyboard shortcut** provide a much better UX.
 
@@ -1093,7 +1345,7 @@ all = ["yui-agent[meeting,ui,hotkey]"]
 
 ---
 
-## 10. Daemon (Phase 3, macOS only)
+## 11. Daemon (Phase 3, macOS only)
 
 - launchd plist at `~/Library/LaunchAgents/com.yui.agent.plist`
 - Starts on login, restarts on crash (5s backoff)
@@ -1104,7 +1356,7 @@ all = ["yui-agent[meeting,ui,hotkey]"]
 
 ---
 
-## 11. Non-Functional Requirements
+## 12. Non-Functional Requirements
 
 | Category | Requirement |
 |---|---|
@@ -1121,7 +1373,7 @@ all = ["yui-agent[meeting,ui,hotkey]"]
 
 ---
 
-## 12. Acceptance Criteria
+## 13. Acceptance Criteria
 
 ### Phase 0 (CLI + Bedrock + Tools)
 
@@ -1209,7 +1461,7 @@ all = ["yui-agent[meeting,ui,hotkey]"]
 
 ---
 
-## 13. Edge Cases & Error Handling
+## 14. Edge Cases & Error Handling
 
 | # | Scenario | Expected behavior |
 |---|---|---|
@@ -1236,7 +1488,7 @@ all = ["yui-agent[meeting,ui,hotkey]"]
 
 ---
 
-## 14. Dependency Inventory
+## 15. Dependency Inventory
 
 | Package | Version | Purpose | License |
 |---|---|---|---|
@@ -1269,7 +1521,7 @@ all = ["yui-agent[meeting,ui,hotkey]"]
 
 ---
 
-## 15. Open Questions
+## 16. Open Questions
 
 | # | Question | Impact | Status |
 |---|---|---|---|
@@ -1283,7 +1535,7 @@ all = ["yui-agent[meeting,ui,hotkey]"]
 
 ---
 
-## 16. Glossary
+## 17. Glossary
 
 | Term | Definition |
 |---|---|
@@ -1309,3 +1561,4 @@ all = ["yui-agent[meeting,ui,hotkey]"]
 | 2026-02-25 | AYA | v0.6.0 — Kiro round 3 review: C-01 WER accuracy corrected (Whisper ~8-12%, Transcribe ~5-8%). C-02 ScreenCaptureKit confirmed capable of audio capture (capturesAudio API), but PyObjC stability note added + BlackHole fallback strengthened. C-03 `yui` console script added to pyproject.toml. C-04 realtime_enabled default→false, budget guard added. C-05 Meeting tool specs added (Section 4.10.1). M-01 Minutes template fixed (no attendees without diarization). M-02 pyaudio removed, sounddevice only. M-03 Whisper crash recovery (E-19). M-04 Privacy claim clarified for Transcribe opt-in. M-05 Meeting→Phase 2.5. M-06 Meeting app compatibility table added (Section 9.5.11). M-07 AgentCore Code Interpreter AC added. Minor: sliding window config, Slack mrkdwn note, FTS5 search, MCP allowlist docs, optional deps in Section 14, retention cleanup in daemon, test coverage clarification. |
 | 2026-02-25 | AYA | v0.7.0 — Name: 結（ゆい / Yui）. Repo renamed: hana-agent → yui-agent. New Section 9.5.12: Meeting Trigger UI (Menu Bar App + Global Hotkey). rumps-based macOS menu bar icon with recording state indicator (🎤/🔴/⏳/✅). pynput global hotkeys (⌘⇧R toggle, ⌘⇧S stop, ⌘⇧M open minutes). IPC via Unix domain socket (~/.yui/yui.sock). launchd auto-start support. CLI: yui menubar [--install/--uninstall]. Optional deps: rumps, pynput. AC-52 through AC-61 added. Phase 2.5 scope expanded. |
 | 2026-02-25 | AYA | v0.8.0 — New Section 5.2.1: Slack App/Bot Setup Guide (complete step-by-step). Full app manifest YAML with all required OAuth scopes (15 bot scopes). Socket Mode architecture explained (why no public URL needed, firewall-friendly). Token generation guide (Bot Token xoxb + App-Level Token xapp). Config integration (config.yaml + .env). Slack capabilities matrix (mention, DM, channels, reactions, file upload, threads). AC-62 through AC-66 added (setup validation, manifest shipping, token errors, response time, DM support). |
+| 2026-02-26 | AYA | v0.9.0 — New Section 8: Autonomy Architecture (Phase 2–3). Single-agent ceiling analysis. Autonomy levels L0–L4 defined. Layer 1: Strands Agent Loop (ReAct). Layer 2: Yui ⇔ Kiro Cross-Review via GraphBuilder Reflexion Loop — requirements review by Kiro (per han directive), coding workflow, design review. Kiro CLI tools (`kiro_review`, `kiro_implement`) as Strands @tool. Layer 3: Self-Evaluation + Self-Improvement (task-level eval, weekly AGENTS.md PR proposals, OODA loop). Guardrails: AGENTS.md changes via PR only, cost budget, loop limits, maintenance window. Evidence from AYA ecosystem. Sections 8–16 renumbered to 9–17. AC-67 through AC-80 added (14 new, cumulative 80 ACs). |
