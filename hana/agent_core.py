@@ -11,6 +11,7 @@ from strands.models.bedrock import BedrockModel
 from hana.auth.aws_credentials import validate_aws_credentials
 from hana.local_tools import exec_tool, file_ops
 from hana.local_tools import git_tool, kiro
+from hana.local_tools import outlook
 from hana.cloud_tools import browser, memory, search
 from hana.runtime.config_loader import load_workspace_files
 
@@ -90,6 +91,13 @@ def _collect_tools(config: dict[str, Any]) -> list:
         kiro.configure(kiro_config)
         tools.append(kiro.kiro_delegate)
         logger.info("Loaded tool: kiro_delegate")
+
+    # Outlook tools (macOS AppleScript only)
+    outlook_config = tools_config.get("outlook", {})
+    if outlook_config.get("enabled", False):
+        outlook.configure(outlook_config)
+        tools.extend([outlook.outlook_calendar, outlook.outlook_mail])
+        logger.info("Loaded tools: outlook_calendar, outlook_mail")
 
     # Cloud tools (always available — gracefully degrade if unconfigured)
     tools.extend([
