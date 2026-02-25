@@ -1,1 +1,0 @@
-"""HANA test suite."""
