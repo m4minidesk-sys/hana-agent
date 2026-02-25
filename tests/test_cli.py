@@ -17,7 +17,8 @@ class TestCLIStartup:
 
         captured = io.StringIO()
         with patch("sys.stdin", io.StringIO("")), \
-             patch("sys.stdout", captured):
+             patch("sys.stdout", captured), \
+             patch("sys.argv", ["yui"]):
             main()
 
         output = captured.getvalue()
@@ -31,7 +32,8 @@ class TestCLIStartup:
         # Three empty lines then EOF
         captured = io.StringIO()
         with patch("sys.stdin", io.StringIO("\n\n\n")), \
-             patch("sys.stdout", captured):
+             patch("sys.stdout", captured), \
+             patch("sys.argv", ["yui"]):
             main()
 
         output = captured.getvalue()

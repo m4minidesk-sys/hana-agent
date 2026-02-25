@@ -1,5 +1,6 @@
 """CLI REPL interface."""
 
+import argparse
 import atexit
 import os
 import readline
@@ -27,15 +28,30 @@ def _setup_readline() -> None:
 
 
 def main() -> None:
-    """Run CLI REPL."""
+    """Run CLI REPL or Slack adapter."""
+    parser = argparse.ArgumentParser(description="結（Yui） — Your Unified Intelligence")
+    parser.add_argument("--slack", action="store_true", help="Start Slack Socket Mode adapter")
+    parser.add_argument("--config", help="Path to config file (default: ~/.yui/config.yaml)")
+    args = parser.parse_args()
+
     # Load config (AC-06, AC-07)
     try:
-        config = load_config()
+        config = load_config(args.config)
     except Exception as e:
         print(f"[yui] Config error: {e}", file=sys.stderr)
         print("[yui] Fix ~/.yui/config.yaml or delete it to use defaults.", file=sys.stderr)
         sys.exit(1)
 
+    # Route to Slack or CLI
+    if args.slack:
+        from yui.slack_adapter import run_slack
+        run_slack(config)
+    else:
+        _run_repl(config)
+
+
+def _run_repl(config: dict) -> None:
+    """Run CLI REPL."""
     # Create agent (AC-02, AC-05)
     try:
         agent = create_agent(config)
