@@ -1,7 +1,7 @@
 # HANA — Requirements Document
 
 > Lightweight, AWS-optimized AI agent orchestrator inspired by OpenClaw.
-> Version: 0.2.0-draft | Last updated: 2026-02-25 | Reviewed by: Kiro CLI (v1.26.2)
+> Version: 0.3.0-draft | Last updated: 2026-02-25 | Reviewed by: Kiro CLI (v1.26.2, 2 rounds)
 
 ---
 
@@ -29,7 +29,7 @@ AWS corporate engineers who need a local AI coding assistant that:
 | Criteria | Target |
 |---|---|
 | Install size | <50MB (vs OpenClaw's 300MB+) |
-| Python dependencies | ≤8 packages |
+| Python dependencies | ≤10 packages |
 | Time to first working agent | <10 minutes |
 | Bedrock Converse API latency overhead | <100ms over raw API call |
 | Test coverage | >80% for core modules |
@@ -55,6 +55,9 @@ AWS corporate engineers who need a local AI coding assistant that:
 - **Multi-channel support** — Slack + CLI only (no Telegram, Discord, etc.)
 - **Plugin/Hook system** — tools are registered in code, not dynamically loaded
 - **MCP server hosting** — HANA consumes MCP tools but does not expose MCP endpoints
+- **24/7 Slack Bot (Lambda deployment)** — Phase 0-3 uses local Socket Mode only; cloud Slack adapter deferred to Phase 4+
+- **Flexible cron scheduling (EventBridge)** — Phase 0-3 uses fixed-interval Heartbeat only; EventBridge deferred to Phase 4+
+- **External search APIs as default** — Tavily/Exa are opt-in only; default web search uses Bedrock Knowledge Base (VPC-internal)
 
 ### 2.3 Pre-Phase 0: SDK Verification Gate (Kiro review C-01)
 
@@ -135,37 +138,162 @@ Before any implementation begins, verify all SDK assumptions:
 
 ---
 
-## 4. Tool Inventory
+## 4. Tool Inventory & Local/Cloud Boundary Design
 
-### 4.1 Tools from strands-agents-tools (use as-is)
+### 4.0 Boundary Design Principles (Kiro review round 2)
 
-| Tool | strands-agents-tools name | Purpose |
+Every tool must be explicitly assigned to a tier based on these criteria:
+
+| Criteria | → Local | → Cloud (AWS) |
 |---|---|---|
-| Shell execution | `shell` | Run local commands with configurable allowlist |
-| File read | `file_read` | Read file contents |
-| File write | `file_write` | Write/create files |
-| File edit | `editor` | View, replace, insert, undo edits in files |
-| Slack client | `slack_client` | Send messages, react, read Slack channels |
-| AWS services | `use_aws` | Generic boto3 service access |
-| Web search | `tavily_search` | Web search (requires Tavily API key) |
-| Web extract | `tavily_extract` | Extract content from URLs |
-| AgentCore Memory | `agent_core_memory` | Store/retrieve long-term memories via Bedrock AgentCore |
-| Browser | `use_browser` | Chromium-based browser automation (optional, local) |
+| Needs local filesystem | ✅ Must be local | — |
+| Needs local CLI (Kiro, git, osascript) | ✅ Must be local | — |
+| Low latency required (<100ms) | ✅ Prefer local | — |
+| Must work offline | ✅ Must be local | — |
+| Handles sensitive local data (keys, config) | ✅ Must be local | — |
+| Heavy compute / memory (browser, ML) | — | ✅ Prefer cloud |
+| AWS VPC data governance requirement | — | ✅ Must be cloud |
+| 24/7 availability needed | — | ✅ Prefer cloud |
+| Sandboxed execution required | — | ✅ Prefer cloud |
 
-### 4.2 Custom tools (HANA-specific, must implement)
+### 4.1 Local Tools (run on user's Mac)
+
+These tools MUST run locally because they access local filesystem, CLIs, or macOS APIs.
+
+| Tool | Source | Purpose | Why local |
+|---|---|---|---|
+| `shell` | strands-agents-tools | Shell command execution with allowlist | Local CLI access |
+| `file_read` | strands-agents-tools | Read file contents | Local filesystem |
+| `file_write` | strands-agents-tools | Write/create files | Local filesystem |
+| `editor` | strands-agents-tools | View, replace, insert, undo edits | Local filesystem |
+| `kiro_delegate` | Custom | Delegate coding tasks to Kiro CLI | Local CLI + workspace access |
+| `git_tool` | Custom | Git operations (status, add, commit, push, log, diff) | Local repo access |
+| `outlook_calendar` | Custom | Read/create Outlook calendar events (Mac only) | macOS AppleScript API |
+| `outlook_mail` | Custom | Read Outlook email / create drafts (Mac only) | macOS AppleScript API |
+| `http_request` | strands-agents-tools | HTTP GET/POST to public URLs | Low latency, simple HTTP |
+
+### 4.2 Cloud Tools (run on AWS)
+
+These tools run in AWS because they require managed infrastructure, sandboxing, or VPC-internal data processing.
+
+| Tool | Source | Purpose | Why cloud |
+|---|---|---|---|
+| Bedrock Converse | Strands SDK core | LLM inference | VPC data governance, IAM auth |
+| AgentCore Browser | strands-agents-tools `AgentCoreBrowser` | Web browsing automation (managed Chrome) | Memory savings (~2GB), sandboxed, VPC-internal |
+| AgentCore Memory | strands-agents-tools `agent_core_memory` | Long-term memory (facts, preferences) | Cross-device sync, managed persistence |
+| AgentCore Code Interpreter | strands-agents-tools `code_interpreter` | Python code execution in sandbox | Sandboxed, safe arbitrary code execution |
+| Bedrock Knowledge Base | strands-agents-tools `retrieve` | Semantic search over indexed documents | VPC-internal, replaces external search APIs |
+
+### 4.3 Hybrid Tools (local initiation, cloud component)
+
+| Tool | Local component | Cloud component | Rationale |
+|---|---|---|---|
+| `slack_client` | Socket Mode WebSocket from local machine | Slack API (external SaaS) | Must be local for Socket Mode; Slack API is external but authorized via bot tokens |
+
+### 4.4 Explicitly NOT included (with rationale)
+
+| Tool | Available in strands-agents-tools | Why excluded |
+|---|---|---|
+| `tavily_search` / `tavily_extract` / `tavily_crawl` | Yes | **Sends queries to external SaaS (outside AWS VPC)** — conflicts with data governance requirement. Use `retrieve` (Bedrock KB) or `http_request` instead. Can be opt-in enabled in config.yaml with explicit warning. |
+| `exa_search` / `exa_get_contents` | Yes | Same VPC concern as Tavily |
+| `python_repl` (local) | Yes | **Security risk** — arbitrary local code execution without sandbox. Use AgentCore Code Interpreter instead. Can be opt-in enabled with import allowlist. |
+| `use_browser` (local Chromium) | Yes | **~2GB memory overhead** — use AgentCore Browser by default. Available as fallback for offline/AgentCore-unavailable scenarios via config. |
+| `use_computer` | Yes | Desktop automation — high security risk, out of scope |
+| `nova_reels` / image / video / audio tools | Yes | Media generation — not required for coding assistant use case |
+
+### 4.5 Browser provider selection (Kiro review round 2, C-1)
+
+```yaml
+tools:
+  browser:
+    provider: agentcore       # Default: AWS-managed Chrome
+    # provider: local         # Fallback: local Chromium (requires pip install strands-agents-tools[local-chromium-browser])
+    region: us-east-1         # AgentCore Browser region
+```
+
+| Provider | When to use | Pros | Cons |
+|---|---|---|---|
+| `agentcore` (default) | Normal operation | No local memory cost, sandboxed, VPC-internal | Requires AWS credentials, network latency |
+| `local` (fallback) | Offline, AgentCore unavailable | Low latency, works offline | ~2GB memory, local Chromium install required |
+
+### 4.6 Web search strategy (Kiro review round 2, C-2)
+
+**Problem**: Tavily/Exa send search queries to external SaaS → breaks VPC data governance requirement.
+
+**Solution — phased approach**:
+
+| Phase | Web search method | VPC compliance |
+|---|---|---|
+| Phase 0–1 | `http_request` (direct HTTP GET to public URLs) | ✅ No external API keys, local execution |
+| Phase 2 | `retrieve` (Bedrock Knowledge Base) for indexed corporate docs | ✅ VPC-internal semantic search |
+| Phase 3+ | `tavily_search` as **opt-in** with config warning | ⚠️ Explicit user choice, logged |
+
+```yaml
+tools:
+  web_search:
+    provider: bedrock_kb      # Default: VPC-internal (requires Knowledge Base setup)
+    # provider: tavily        # Opt-in: external SaaS (WARNING: data leaves AWS VPC)
+    # provider: http_only     # Minimal: plain HTTP requests only
+    knowledge_base_id: ""     # Required for bedrock_kb provider
+```
+
+### 4.7 Python execution strategy (Kiro review round 2, C-3)
+
+**Problem**: `python_repl` executes arbitrary code locally without sandbox.
+
+**Solution**:
+
+| Provider | Security | Use case |
+|---|---|---|
+| `agentcore_code_interpreter` (default) | ✅ AWS-managed sandbox, isolated | Data analysis, calculations, any untrusted code |
+| `python_repl` (opt-in) | ⚠️ Local execution, import allowlist | Quick local scripts, requires explicit config flag |
+
+```yaml
+tools:
+  python:
+    provider: agentcore_code_interpreter  # Default: sandboxed
+    # provider: local_repl                # Opt-in: local (WARNING: arbitrary code execution)
+    region: us-east-1
+```
+
+### 4.8 Memory architecture (Kiro review round 2, M-2)
+
+**Two-tier memory with clear separation of concerns:**
+
+| Data type | Storage | Reason |
+|---|---|---|
+| **Conversation history** (short-term) | SQLite (local) | Low latency, offline-capable, single device |
+| **Session metadata** (thread IDs, timestamps) | SQLite (local) | Local management sufficient |
+| **Long-term memory** (facts, preferences, learned info) | AgentCore Memory (cloud) | Cross-device sync, managed persistence, semantic retrieval |
+
+SQLite handles ephemeral session data. AgentCore Memory handles durable knowledge that should survive device changes. They are complementary, not redundant.
+
+### 4.9 Scheduler design (Kiro review round 2, M-3)
+
+| Phase | Scheduler | Limitation |
+|---|---|---|
+| Phase 0–3 | Heartbeat only (fixed-interval, in-process `threading.Timer`) | Machine must be awake; no cron expressions |
+| Phase 4+ | EventBridge (cloud) for reliable cron scheduling | Requires AWS setup; machine sleep irrelevant |
+
+**Out of scope for Phase 0–3**: Flexible cron scheduling (EventBridge). Heartbeat is fixed-interval only.
+
+### 4.10 Custom tool implementation details
 
 | Tool | Purpose | Implementation notes |
 |---|---|---|
-| `kiro_delegate` | Delegate coding tasks to Kiro CLI | `subprocess.run(["kiro-cli", "chat", "--no-interactive", ...])`, ANSI strip, timeout 300s, **output truncated at 50,000 chars** (Kiro review M-02) |
+| `kiro_delegate` | Delegate coding tasks to Kiro CLI | `subprocess.run(["kiro-cli", "chat", "--no-interactive", ...])`, ANSI strip, timeout 300s, **output truncated at 50,000 chars** |
 | `git_tool` | Git operations (status, add, commit, push, log, diff, branch, checkout) | Wrapper around `subprocess.run(["git", ...])` with allowlisted subcommands |
 | `outlook_calendar` | Read/create Outlook calendar events (Mac only) | AppleScript via `osascript` subprocess |
 | `outlook_mail` | Read Outlook email / create drafts (Mac only) | AppleScript via `osascript` subprocess |
 
-### 4.3 Tool security model
+### 4.11 Tool security model
 
-- **Shell execution**: strands-agents-tools `shell` tool has built-in user confirmation. HANA config adds an allowlist with subcommand granularity (e.g., `"git status"`, `"git log"`, `"git diff"` — not bare `"git"`) and a blocklist (e.g., `["rm -rf /", "sudo", "curl | bash", "git push --force", "git reset --hard", "git clean -f"]`). Remove bare `git` from shell allowlist; use dedicated `git_tool` for safe git operations. (Kiro review M-01)
+- **Shell execution**: strands-agents-tools `shell` tool has built-in user confirmation. HANA config adds an allowlist with subcommand granularity (e.g., `"git status"`, `"git log"`, `"git diff"` — not bare `"git"`) and a blocklist (e.g., `["rm -rf /", "sudo", "curl | bash", "git push --force", "git reset --hard", "git clean -f"]`). Remove bare `git` from shell allowlist; use dedicated `git_tool` for safe git operations.
 - **File operations**: Restricted to configurable workspace directory by default
-- **Outlook**: Read-only by default; draft creation requires explicit `allow_drafts: true` config flag. AppleScript execution is sandboxed: only `tell application "Microsoft Outlook"` is allowed. Generated AppleScript is validated before execution — any `tell application` targeting a non-Outlook app is rejected. (Kiro review M-05)
+- **Outlook**: Read-only by default; draft creation requires explicit `allow_drafts: true` config flag. AppleScript execution is sandboxed: only `tell application "Microsoft Outlook"` is allowed. Generated AppleScript is validated before execution — any `tell application` targeting a non-Outlook app is rejected.
+- **Python execution**: AgentCore Code Interpreter by default (sandboxed). Local `python_repl` requires explicit opt-in + import allowlist.
+- **Web search**: Bedrock Knowledge Base by default (VPC-internal). Tavily requires explicit opt-in with logged warning.
+- **Browser**: AgentCore Browser by default (managed Chrome). Local Chromium requires explicit opt-in.
 
 ---
 
@@ -265,6 +393,19 @@ tools:
     enabled: false                  # Disabled by default
     allow_drafts: false             # Draft creation requires explicit opt-in
     # AppleScript sandboxed: only "Microsoft Outlook" target allowed
+  browser:
+    provider: agentcore             # "agentcore" (default, cloud) or "local" (fallback)
+    region: us-east-1
+  web_search:
+    provider: bedrock_kb            # "bedrock_kb" (default, VPC-internal) or "tavily" (opt-in, external)
+    knowledge_base_id: ""           # Required for bedrock_kb
+    # WARNING: tavily sends queries to external SaaS outside AWS VPC
+  python:
+    provider: agentcore_code_interpreter  # "agentcore_code_interpreter" (default, sandboxed) or "local_repl" (opt-in)
+    region: us-east-1
+  memory:
+    provider: agentcore             # "agentcore" (default, cloud) or "local_only" (SQLite only)
+    region: us-east-1
 
 # Channel configuration  
 channels:
@@ -322,6 +463,7 @@ runtime:
 - Python `threading.Timer` or `schedule` library
 - Runs in-process (not a separate process)
 - Heartbeat results logged but not sent to any channel unless agent decides to
+- **Fixed-interval only** — cron expressions (e.g., "every Monday at 9am") are NOT supported in Phase 0–3. Flexible scheduling via EventBridge is deferred to Phase 4+.
 
 ---
 
@@ -342,7 +484,7 @@ runtime:
 | **Language** | Python 3.12+ |
 | **License** | Apache 2.0 |
 | **Install size** | <50MB |
-| **Dependencies** | strands-agents, strands-agents-tools, boto3, slack-bolt, pyyaml, rich |
+| **Dependencies** | strands-agents, strands-agents-tools, bedrock-agentcore, boto3, slack-bolt, pyyaml, rich |
 | **Startup time** | <3 seconds to CLI REPL |
 | **LLM latency** | No measurable overhead vs raw Bedrock API call |
 | **Security** | No plaintext secrets in config; .env file with 600 permissions |
@@ -430,14 +572,15 @@ runtime:
 | Package | Version | Purpose | License |
 |---|---|---|---|
 | `strands-agents` | ≥0.1.0 | Core agent SDK (loop, model, tools) | Apache 2.0 |
-| `strands-agents-tools` | ≥0.1.0 | Built-in tools (shell, file, slack, memory) | Apache 2.0 |
+| `strands-agents-tools` | ≥0.1.0 | Built-in tools (shell, file, slack, memory, browser) | Apache 2.0 |
+| `bedrock-agentcore` | ≥0.1.0 | AgentCore Browser, Memory, Code Interpreter SDKs | Apache 2.0 |
 | `boto3` | ≥1.35.0 | AWS SDK (Bedrock, S3, etc.) | Apache 2.0 |
 | `slack-bolt` | ≥1.21.0 | Slack Socket Mode adapter | MIT |
 | `slack-sdk` | ≥3.33.0 | Slack API client (transitive via slack-bolt) | MIT |
 | `pyyaml` | ≥6.0 | YAML config parsing | MIT |
 | `rich` | ≥13.0 | CLI formatted output | MIT |
 
-**Total: 7 direct dependencies** (vs OpenClaw's 54)
+**Total: 8 direct dependencies** (vs OpenClaw's 54)
 
 ---
 
@@ -445,11 +588,13 @@ runtime:
 
 | # | Question | Impact | Status |
 |---|---|---|---|
-| Q-01 | Should web search use Tavily (API key required) or Bedrock Agent inline search? | Phase 2 tool selection | Open |
-| Q-02 | AgentCore Browser Tool availability — is it GA in target AWS region? | Phase 2 feasibility | Open |
-| Q-03 | Project name "HANA" — confirmed or placeholder? | README/branding | Open — hanさん rejected initial suggestion, using as placeholder |
+| Q-01 | ~~Should web search use Tavily or Bedrock Agent inline search?~~ | Phase 2 tool selection | **Resolved** — Default: Bedrock KB (VPC-internal). Tavily opt-in only. |
+| Q-02 | AgentCore Browser Tool availability — is it GA in target AWS region? | Phase 2 feasibility | Open — must verify in Pre-Phase 0 SDK Verification Gate |
+| Q-03 | Project name "HANA" — confirmed or placeholder? | README/branding | Open |
 | Q-04 | Should Heartbeat results be posted to a Slack channel? | Phase 3 behavior | Open |
-| Q-05 | MCP tool consumption — should HANA support loading tools from MCP servers? | Future extensibility | Deferred to Phase 4+ |
+| Q-05 | ~~MCP tool consumption — should HANA support loading tools from MCP servers?~~ | Future extensibility | Deferred to Phase 4+ |
+| Q-06 | AgentCore Code Interpreter availability — GA in target region? | Phase 2 feasibility | Open — must verify in Pre-Phase 0 SDK Verification Gate |
+| Q-07 | AgentCore Memory — namespace isolation strategy for multi-user? | Phase 2+ | Open |
 
 ---
 
@@ -473,4 +618,4 @@ runtime:
 | Date | Author | Change |
 |---|---|---|
 | 2026-02-25 | AYA | Initial draft — Discovery from OpenClaw source analysis + Strands SDK research |
-| 2026-02-25 | AYA | v0.2.0 — Incorporated Kiro CLI review feedback: SDK verification gate (C-01), Guardrails security model (C-02), SQLite WAL+PID lock (C-03), shell allowlist granularity (M-01), Kiro output truncation (M-02), Slack rate limiting (M-03), Heartbeat file integrity (M-04), Outlook AppleScript sandboxing (M-05), Python 3.12+ alignment (m-01), timezone handling (m-02), log rotation (m-03), E-12 recovery (m-04), negative test ACs (m-05) |
+| 2026-02-25 | AYA | v0.3.0 — Local/Cloud boundary redesign per han's directive + Kiro round 2 review. Section 4 fully rewritten with 3-tier model (local/cloud/hybrid). Browser: AgentCore default, local fallback (C-1). Web search: Bedrock KB default, Tavily opt-in (C-2). Python: AgentCore Code Interpreter default, local opt-in (C-3). Memory: 2-tier (SQLite short-term + AgentCore long-term) with clear separation (M-2). Slack: local Socket Mode confirmed for Phase 0-3 (M-1). Scheduler: fixed-interval only, EventBridge deferred (M-3). Added http_request to local tools (m-1). 6 explicitly excluded tools with rationale. Config.yaml updated with provider selection for browser/search/python/memory. Q-01 resolved, Q-06/Q-07 added. |
