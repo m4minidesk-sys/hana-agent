@@ -54,6 +54,36 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "bot_token": "",
         "app_token": "",
     },
+    "meeting": {
+        "audio": {
+            "capture_method": "screencapturekit",
+            "include_mic": True,
+            "sample_rate": 16000,
+            "channels": 1,
+        },
+        "whisper": {
+            "engine": "mlx",
+            "model": "large-v3-turbo",
+            "language": "auto",
+            "chunk_seconds": 5,
+            "vad_enabled": True,
+        },
+        "analysis": {
+            "provider": "bedrock",
+            "realtime_enabled": False,
+            "realtime_interval_seconds": 60,
+            "realtime_window_minutes": 5,
+            "max_cost_per_meeting_usd": 2.0,
+            "minutes_auto_generate": True,
+        },
+        "output": {
+            "transcript_dir": "~/.yui/meetings/",
+            "format": "markdown",
+            "save_audio": False,
+            "slack_notify": True,
+        },
+        "retention_days": 90,
+    },
     "runtime": {
         "session": {
             "db_path": "~/.yui/sessions.db",

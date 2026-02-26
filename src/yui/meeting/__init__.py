@@ -37,12 +37,22 @@ def _check_meeting_deps() -> None:
         )
 
 
-# Lazy imports — models are always available (no extra deps)
+# Models are always available (no extra deps)
 from yui.meeting.models import Meeting, MeetingConfig, TranscriptChunk  # noqa: E402
 
-# Manager is always importable (guards deps internally)
+# Manager is always importable (guards deps internally via lazy init)
 from yui.meeting.manager import MeetingManager  # noqa: E402
 
-# Recorder and Transcriber guard their own imports
-from yui.meeting.recorder import AudioRecorder  # noqa: E402
-from yui.meeting.transcriber import WhisperTranscriber  # noqa: E402
+
+def __getattr__(name: str):
+    """Lazy import for AudioRecorder and WhisperTranscriber.
+
+    These require numpy/sounddevice/mlx-whisper, so only import on access.
+    """
+    if name == "AudioRecorder":
+        from yui.meeting.recorder import AudioRecorder
+        return AudioRecorder
+    if name == "WhisperTranscriber":
+        from yui.meeting.transcriber import WhisperTranscriber
+        return WhisperTranscriber
+    raise AttributeError(f"module 'yui.meeting' has no attribute {name!r}")
