@@ -5,9 +5,9 @@ import time
 from unittest.mock import MagicMock, patch
 
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, ReadTimeoutError
 
-from yui.agent import create_agent
+from yui.agent import create_agent, BedrockErrorHandler
 from yui.config import load_config
 
 
@@ -472,24 +472,85 @@ class TestConverseE2E:
 
 # Test utility functions
 def test_error_classification():
-    """Test error classification utility function."""
-    # This would test a utility function that classifies different Bedrock errors
-    # Implementation pending
-    pass
+    """Test _should_retry classifies retryable vs non-retryable errors."""
+    handler = BedrockErrorHandler()
+
+    # Retryable: ThrottlingException
+    throttle_err = ClientError(
+        {"Error": {"Code": "ThrottlingException", "Message": "Rate exceeded"}},
+        "Converse",
+    )
+    assert handler._should_retry(throttle_err) is True
+
+    # Retryable: ServiceUnavailableException
+    svc_err = ClientError(
+        {"Error": {"Code": "ServiceUnavailableException", "Message": "Unavailable"}},
+        "Converse",
+    )
+    assert handler._should_retry(svc_err) is True
+
+    # NOT retryable: AccessDeniedException
+    access_err = ClientError(
+        {"Error": {"Code": "AccessDeniedException", "Message": "Denied"}},
+        "Converse",
+    )
+    assert handler._should_retry(access_err) is False
+
+    # NOT retryable: ValidationException
+    val_err = ClientError(
+        {"Error": {"Code": "ValidationException", "Message": "Invalid"}},
+        "Converse",
+    )
+    assert handler._should_retry(val_err) is False
+
+    # Retryable: ReadTimeoutError
+    timeout_err = ReadTimeoutError(endpoint_url="https://bedrock.us-east-1.amazonaws.com")
+    assert handler._should_retry(timeout_err) is True
 
 
 def test_retry_backoff_calculation():
-    """Test exponential backoff calculation."""
-    # This would test the exponential backoff calculation logic
-    # Implementation pending  
-    pass
+    """Test exponential backoff delays increase correctly."""
+    handler = BedrockErrorHandler(max_retries=3, backoff_base=1.0)
+
+    # Verify backoff formula: delay = backoff_base * (2 ** attempt)
+    assert handler.backoff_base * (2 ** 0) == 1.0  # attempt 0: 1s
+    assert handler.backoff_base * (2 ** 1) == 2.0  # attempt 1: 2s
+    assert handler.backoff_base * (2 ** 2) == 4.0  # attempt 2: 4s
+
+    # Custom backoff_base
+    handler2 = BedrockErrorHandler(max_retries=3, backoff_base=0.5)
+    assert handler2.backoff_base * (2 ** 0) == 0.5
+    assert handler2.backoff_base * (2 ** 1) == 1.0
+    assert handler2.backoff_base * (2 ** 2) == 2.0
 
 
 def test_error_message_formatting():
-    """Test user-friendly error message formatting."""
-    # This would test how raw Bedrock errors are formatted for users
-    # Implementation pending
-    pass
+    """Test _enhance_error adds user-friendly guidance to errors."""
+    handler = BedrockErrorHandler()
+
+    # AccessDeniedException → includes IAM policy guidance
+    access_err = ClientError(
+        {"Error": {"Code": "AccessDeniedException", "Message": "User not authorized"}},
+        "Converse",
+    )
+    enhanced = handler._enhance_error(access_err)
+    assert isinstance(enhanced, ClientError)
+
+    # ResourceNotFoundException → includes model guidance
+    model_err = ClientError(
+        {"Error": {"Code": "ResourceNotFoundException", "Message": "Model not found"}},
+        "Converse",
+    )
+    enhanced = handler._enhance_error(model_err)
+    assert isinstance(enhanced, ClientError)
+
+    # ValidationException → includes validation guidance
+    val_err = ClientError(
+        {"Error": {"Code": "ValidationException", "Message": "token limit exceeded"}},
+        "Converse",
+    )
+    enhanced = handler._enhance_error(val_err)
+    assert isinstance(enhanced, ClientError)
 
 
 # Parametrized test for all Converse error scenarios

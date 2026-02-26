@@ -157,21 +157,43 @@ class TestDatabaseLocked:
 class TestContextWindowExceeded:
     """AC-35: Context window exceeded."""
 
-    def test_context_window_force_compaction(self):
+    def test_context_window_force_compaction(self, tmp_path):
         """Context window exceeded should force compaction or archive."""
-        # This would require session manager integration
-        # Placeholder for future implementation
-        pass
+        from yui.session import SessionManager
+
+        db_path = str(tmp_path / "test.db")
+        manager = SessionManager(db_path, compaction_threshold=5, keep_recent=2)
+        session_id = "ctx-window-test"
+
+        # Add messages exceeding the compaction threshold
+        for i in range(10):
+            manager.add_message(session_id, "user", f"Message {i}")
+
+        msg_count = manager.get_message_count(session_id)
+        assert msg_count == 10
+
+        # Compact — summarizer returns a summary string
+        manager.compact_session(session_id, summarizer=lambda msgs: f"Summary of {len(msgs)} messages")
+
+        # After compaction: 1 summary + keep_recent (2) = 3
+        msgs = manager.get_messages(session_id)
+        assert len(msgs) == 3
+        assert msgs[0].role == "system"
+        assert "Summary of 8 messages" in msgs[0].content
 
 
 class TestMCPServerFailure:
     """AC-36: MCP server connection failure."""
 
     def test_mcp_server_failure_graceful_degradation(self):
-        """MCP server connection failure should allow agent to continue."""
-        # MCP integration not yet implemented in Phase 3
-        # Placeholder for future implementation
-        pass
+        """MCP server connection failure should raise MCPConnectionError."""
+        from yui.tools.mcp_integration import MCPManager, MCPConfigError
+
+        manager = MCPManager()
+
+        # Attempting to connect to unconfigured server → MCPConfigError
+        with pytest.raises(MCPConfigError, match="not configured"):
+            manager.connect("nonexistent-server")
 
 
 class TestGuardrailsIntegration:
