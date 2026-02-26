@@ -1,4 +1,4 @@
-"""Workshop Testing — automated workshop scraping and step planning."""
+"""Workshop Testing — automated workshop scraping, planning, and execution."""
 
 from yui.workshop.models import (
     ExecutableStep,
