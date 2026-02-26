@@ -1,7 +1,9 @@
 """Agent setup with Strands + Bedrock."""
 
+import atexit
 import logging
 from pathlib import Path
+from typing import Optional
 
 import strands_tools.file_read as file_read_tool
 import strands_tools.file_write as file_write_tool
@@ -9,9 +11,18 @@ from strands import Agent
 from strands.models.bedrock import BedrockModel
 from strands_tools.editor import editor
 
+from yui.tools.mcp_integration import MCPManager, connect_mcp_servers
 from yui.tools.safe_shell import create_safe_shell
 
 logger = logging.getLogger(__name__)
+
+# Module-level MCP manager for CLI access
+_mcp_manager: Optional[MCPManager] = None
+
+
+def get_mcp_manager() -> Optional[MCPManager]:
+    """Return the active MCP manager instance, if any."""
+    return _mcp_manager
 
 
 def create_agent(config: dict) -> Agent:
@@ -59,6 +70,17 @@ def create_agent(config: dict) -> Agent:
 
     # Conditionally register Phase 2 tools
     tools.extend(_register_phase2_tools(config))
+
+    # Connect MCP servers and add their tools (graceful — failures don't block startup)
+    global _mcp_manager
+    _mcp_manager = connect_mcp_servers(config)
+    mcp_tools = _mcp_manager.get_tools()
+    if mcp_tools:
+        tools.extend(mcp_tools)
+        logger.info("Added %d MCP tool provider(s) to agent", len(mcp_tools))
+
+    # Register cleanup on exit
+    atexit.register(_cleanup_mcp)
 
     # Create agent
     agent = Agent(
@@ -129,3 +151,11 @@ def _load_system_prompt(workspace: Path) -> str:
         logger.info("SOUL.md not found at %s — skipping", soul_md)
 
     return "\n\n".join(parts)
+
+
+def _cleanup_mcp() -> None:
+    """Clean up MCP connections on exit."""
+    global _mcp_manager
+    if _mcp_manager is not None:
+        _mcp_manager.disconnect_all()
+        _mcp_manager = None
