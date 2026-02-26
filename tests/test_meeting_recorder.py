@@ -6,7 +6,6 @@ Uses mock audio streams (DI pattern) — no real audio device needed.
 import queue
 import threading
 import time
-from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
