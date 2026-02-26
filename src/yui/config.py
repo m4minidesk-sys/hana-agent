@@ -13,6 +13,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "model_id": "us.anthropic.claude-sonnet-4-20250514-v1:0",
         "region": "us-east-1",
         "max_tokens": 4096,
+        "guardrail_id": "",
+        "guardrail_version": "DRAFT",
+        "guardrail_latest_message": False,
     },
     "tools": {
         "shell": {
@@ -56,6 +59,16 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "db_path": "~/.yui/sessions.db",
             "compaction_threshold": 50,
             "keep_recent_messages": 5,
+        },
+        "heartbeat": {
+            "enabled": False,
+            "interval_minutes": 15,
+            "active_hours": "07:00-24:00",
+            "timezone": "Asia/Tokyo",
+        },
+        "daemon": {
+            "enabled": False,
+            "launchd_label": "com.yui.agent",
         },
     },
 }

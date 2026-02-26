@@ -32,6 +32,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="結（Yui） — Your Unified Intelligence")
     parser.add_argument("--slack", action="store_true", help="Start Slack Socket Mode adapter")
     parser.add_argument("--config", help="Path to config file (default: ~/.yui/config.yaml)")
+    
+    # Daemon subcommand (AC-23, AC-25)
+    subparsers = parser.add_subparsers(dest="command", help="Daemon management commands")
+    daemon_parser = subparsers.add_parser("daemon", help="Manage Yui daemon")
+    daemon_parser.add_argument("action", choices=["start", "stop", "status"], help="Daemon action")
+    
     args = parser.parse_args()
 
     # Load config (AC-06, AC-07)
@@ -41,6 +47,17 @@ def main() -> None:
         print(f"[yui] Config error: {e}", file=sys.stderr)
         print("[yui] Fix ~/.yui/config.yaml or delete it to use defaults.", file=sys.stderr)
         sys.exit(1)
+
+    # Handle daemon commands
+    if args.command == "daemon":
+        from yui.daemon import daemon_start, daemon_status, daemon_stop
+        if args.action == "start":
+            daemon_start(config)
+        elif args.action == "stop":
+            daemon_stop(config)
+        elif args.action == "status":
+            daemon_status(config)
+        return
 
     # Route to Slack or CLI
     if args.slack:

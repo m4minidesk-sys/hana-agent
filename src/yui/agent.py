@@ -27,13 +27,24 @@ def create_agent(config: dict) -> Agent:
     workspace = Path(config["tools"]["file"]["workspace_root"]).expanduser()
     system_prompt = _load_system_prompt(workspace)
 
-    # Create Bedrock model (AC-02)
+    # Create Bedrock model (AC-02, AC-20)
     model_config = config["model"]
-    model = BedrockModel(
-        model_id=model_config["model_id"],
-        region_name=model_config["region"],
-        max_tokens=model_config["max_tokens"],
-    )
+    model_kwargs = {
+        "model_id": model_config["model_id"],
+        "region_name": model_config["region"],
+        "max_tokens": model_config["max_tokens"],
+    }
+    
+    # Add Guardrails if configured (AC-20)
+    if model_config.get("guardrail_id"):
+        model_kwargs["guardrail_id"] = model_config["guardrail_id"]
+        model_kwargs["guardrail_version"] = model_config.get("guardrail_version", "DRAFT")
+        if model_config.get("guardrail_latest_message"):
+            model_kwargs["guardrail_latest_message"] = True
+        logger.info("Guardrails enabled: %s (version: %s)", 
+                   model_kwargs["guardrail_id"], model_kwargs["guardrail_version"])
+    
+    model = BedrockModel(**model_kwargs)
 
     # Create safe shell tool (AC-03)
     shell_config = config["tools"]["shell"]
