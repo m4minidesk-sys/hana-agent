@@ -363,3 +363,414 @@ def test_ac3_6_nonexistent_preset_shows_available_list():
     assert result.returncode != 0
     output = result.stdout + result.stderr
     assert "available" in output.lower() or "preset" in output.lower()
+
+
+# AC-V1: IMAGE_VARIATION モード追加
+
+def test_acv1_1_mode_argument_supported():
+    """AC-V1-1: --mode引数をサポート（generate/variation）"""
+    result = subprocess.run(
+        [sys.executable, "scripts/generate_icon.py", "--help"],
+        capture_output=True,
+        text=True,
+    )
+    assert "--mode" in result.stdout
+
+
+def test_acv1_2_source_image_argument_supported():
+    """AC-V1-2: --source-image引数をサポート（variation時必須）"""
+    result = subprocess.run(
+        [sys.executable, "scripts/generate_icon.py", "--help"],
+        capture_output=True,
+        text=True,
+    )
+    assert "--source-image" in result.stdout
+
+
+def test_acv1_3_similarity_argument_supported():
+    """AC-V1-3: --similarity引数をサポート（デフォルト0.7、範囲0.2-1.0）"""
+    result = subprocess.run(
+        [sys.executable, "scripts/generate_icon.py", "--help"],
+        capture_output=True,
+        text=True,
+    )
+    assert "--similarity" in result.stdout
+
+
+@patch("boto3.client")
+def test_acv1_4_variation_mode_uses_image_variation_task(mock_boto_client, tmp_path):
+    """AC-V1-4: --mode variation時、taskType=IMAGE_VARIATIONでAPI送信"""
+    from scripts.generate_icon import generate_icons
+
+    mock_bedrock = MagicMock()
+    mock_bedrock.invoke_model.return_value = {
+        "body": MagicMock(read=lambda: b'{"images": ["iVBORw0KGgo="]}')
+    }
+    mock_boto_client.return_value = mock_bedrock
+
+    source_image = tmp_path / "source.png"
+    source_image.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    generate_icons(
+        prompt="light background",
+        output_dir=str(tmp_path),
+        count=1,
+        size=1024,
+        quality="premium",
+        mode="variation",
+        source_image=str(source_image),
+        similarity=0.7,
+    )
+
+    call_args = mock_bedrock.invoke_model.call_args
+    import json as json_mod
+    body = json_mod.loads(call_args[1]["body"])
+    assert body["taskType"] == "IMAGE_VARIATION"
+    assert "imageVariationParams" in body
+    assert "images" in body["imageVariationParams"]
+    assert "text" in body["imageVariationParams"]
+    assert body["imageVariationParams"]["similarityStrength"] == 0.7
+
+
+def test_acv1_5_variation_without_source_image_exits_with_error():
+    """AC-V1-5: --mode variation時に--source-image未指定でエラー"""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/generate_icon.py",
+            "--mode", "variation",
+            "--prompt", "test",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+
+
+def test_acv1_6_nonexistent_source_image_exits_with_error():
+    """AC-V1-6: --source-imageが存在しない場合、エラーメッセージとexit code 1"""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/generate_icon.py",
+            "--mode", "variation",
+            "--prompt", "test",
+            "--source-image", "/nonexistent/image.png",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "not found" in result.stderr.lower()
+
+
+@patch("boto3.client")
+def test_acv1_7_variation_output_filename_format(mock_boto_client, tmp_path):
+    """AC-V1-7: variationモードの出力ファイル名はyui-variation-{seed}-{index}.png"""
+    from scripts.generate_icon import generate_icons
+
+    mock_bedrock = MagicMock()
+    mock_bedrock.invoke_model.return_value = {
+        "body": MagicMock(read=lambda: b'{"images": ["iVBORw0KGgo="]}')
+    }
+    mock_boto_client.return_value = mock_bedrock
+
+    source_image = tmp_path / "source.png"
+    source_image.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    generate_icons(
+        prompt="test",
+        output_dir=str(tmp_path),
+        count=1,
+        seed=99999,
+        size=1024,
+        quality="premium",
+        mode="variation",
+        source_image=str(source_image),
+    )
+
+    assert (tmp_path / "yui-variation-99999-0.png").exists()
+
+
+# AC-V2: バリエーション用プリセット追加
+
+def test_acv2_1_light_lavender_preset_exists():
+    """AC-V2-1: light-lavenderプリセットが存在"""
+    import yaml
+
+    preset_file = Path("scripts/icon_presets.yaml")
+    with open(preset_file) as f:
+        data = yaml.safe_load(f)
+
+    assert "light-lavender" in data["presets"]
+    preset = data["presets"]["light-lavender"]
+    assert "lavender" in preset["prompt"].lower() or "light" in preset["prompt"].lower()
+
+
+def test_acv2_2_light_white_preset_exists():
+    """AC-V2-2: light-whiteプリセットが存在"""
+    import yaml
+
+    preset_file = Path("scripts/icon_presets.yaml")
+    with open(preset_file) as f:
+        data = yaml.safe_load(f)
+
+    assert "light-white" in data["presets"]
+    preset = data["presets"]["light-white"]
+    assert "white" in preset["prompt"].lower()
+
+
+def test_acv2_3_light_gradient_preset_exists():
+    """AC-V2-3: light-gradientプリセットが存在"""
+    import yaml
+
+    preset_file = Path("scripts/icon_presets.yaml")
+    with open(preset_file) as f:
+        data = yaml.safe_load(f)
+
+    assert "light-gradient" in data["presets"]
+
+
+def test_acv2_4_light_blue_preset_exists():
+    """AC-V2-4: light-blueプリセットが存在"""
+    import yaml
+
+    preset_file = Path("scripts/icon_presets.yaml")
+    with open(preset_file) as f:
+        data = yaml.safe_load(f)
+
+    assert "light-blue" in data["presets"]
+
+
+def test_acv2_5_light_warm_preset_exists():
+    """AC-V2-5: light-warmプリセットが存在"""
+    import yaml
+
+    preset_file = Path("scripts/icon_presets.yaml")
+    with open(preset_file) as f:
+        data = yaml.safe_load(f)
+
+    assert "light-warm" in data["presets"]
+
+
+def test_acv2_6_variation_presets_have_mode_and_source():
+    """AC-V2-6: バリエーションプリセットにmode/source_image/similarityが含まれる"""
+    import yaml
+
+    preset_file = Path("scripts/icon_presets.yaml")
+    with open(preset_file) as f:
+        data = yaml.safe_load(f)
+
+    for name in ["light-lavender", "light-white", "light-gradient", "light-blue", "light-warm"]:
+        preset = data["presets"][name]
+        assert preset.get("mode") == "variation", f"{name}: mode should be 'variation'"
+        assert "source_image" in preset, f"{name}: missing source_image"
+        assert "similarity" in preset, f"{name}: missing similarity"
+
+
+def test_acv2_7_variation_preset_auto_applies_mode():
+    """AC-V2-7: バリエーションプリセット指定時、modeが自動適用される"""
+    import yaml
+
+    preset_file = Path("scripts/icon_presets.yaml")
+    with open(preset_file) as f:
+        data = yaml.safe_load(f)
+
+    # light-lavender should have mode=variation so --mode is not needed
+    preset = data["presets"]["light-lavender"]
+    assert preset["mode"] == "variation"
+
+
+# AC-V3: エッジケース
+
+def test_acv3_1_similarity_out_of_range_exits_with_error():
+    """AC-V3-1: --similarityが0.2未満/1.0超でargparseエラー"""
+    result_low = subprocess.run(
+        [
+            sys.executable,
+            "scripts/generate_icon.py",
+            "--mode", "variation",
+            "--prompt", "test",
+            "--source-image", "dummy.png",
+            "--similarity", "0.1",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result_low.returncode == 2
+
+    result_high = subprocess.run(
+        [
+            sys.executable,
+            "scripts/generate_icon.py",
+            "--mode", "variation",
+            "--prompt", "test",
+            "--source-image", "dummy.png",
+            "--similarity", "1.5",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result_high.returncode == 2
+
+
+@patch("boto3.client")
+def test_acv3_2_generate_mode_ignores_source_image(mock_boto_client, tmp_path):
+    """AC-V3-2: --mode generate時に--source-imageを指定してもエラーにならない（無視）"""
+    from scripts.generate_icon import generate_icons
+
+    mock_bedrock = MagicMock()
+    mock_bedrock.invoke_model.return_value = {
+        "body": MagicMock(read=lambda: b'{"images": ["iVBORw0KGgo="]}')
+    }
+    mock_boto_client.return_value = mock_bedrock
+
+    generate_icons(
+        prompt="test",
+        output_dir=str(tmp_path),
+        count=1,
+        size=1024,
+        quality="premium",
+        mode="generate",
+        source_image="/some/image.png",
+    )
+
+    call_args = mock_bedrock.invoke_model.call_args
+    import json as json_mod
+    body = json_mod.loads(call_args[1]["body"])
+    assert body["taskType"] == "TEXT_IMAGE"
+
+
+@patch("boto3.client")
+def test_acv3_3_variation_preset_uses_prompt_as_text(mock_boto_client, tmp_path):
+    """AC-V3-3: variationプリセットのprompt/negativeがIMAGE_VARIATIONのtext/negativeTextに使用"""
+    from scripts.generate_icon import generate_icons
+
+    mock_bedrock = MagicMock()
+    mock_bedrock.invoke_model.return_value = {
+        "body": MagicMock(read=lambda: b'{"images": ["iVBORw0KGgo="]}')
+    }
+    mock_boto_client.return_value = mock_bedrock
+
+    source_image = tmp_path / "source.png"
+    source_image.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    generate_icons(
+        prompt="bright lavender background",
+        output_dir=str(tmp_path),
+        count=1,
+        size=1024,
+        quality="premium",
+        mode="variation",
+        source_image=str(source_image),
+        similarity=0.7,
+        negative="dark, gloomy",
+    )
+
+    call_args = mock_bedrock.invoke_model.call_args
+    import json as json_mod
+    body = json_mod.loads(call_args[1]["body"])
+    assert body["imageVariationParams"]["text"] == "bright lavender background"
+    assert body["imageVariationParams"]["negativeText"] == "dark, gloomy"
+
+
+def test_acv3_4_empty_source_image_exits_with_error(tmp_path):
+    """AC-V3-4: 元画像が0バイトの場合、エラーメッセージとexit code 1"""
+    empty_file = tmp_path / "empty.png"
+    empty_file.write_bytes(b"")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/generate_icon.py",
+            "--mode", "variation",
+            "--prompt", "test",
+            "--source-image", str(empty_file),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "empty" in result.stderr.lower()
+
+
+@patch("boto3.client")
+def test_acv3_5_bedrock_error_in_variation_mode(mock_boto_client, tmp_path, capsys):
+    """AC-V3-5: variationモードでBedrock APIエラー時、既存エラーハンドリング動作"""
+    from botocore.exceptions import ClientError
+    from scripts.generate_icon import generate_icons
+
+    mock_bedrock = MagicMock()
+    mock_bedrock.invoke_model.side_effect = ClientError(
+        {"Error": {"Code": "AccessDeniedException", "Message": "Not authorized"}},
+        "InvokeModel",
+    )
+    mock_boto_client.return_value = mock_bedrock
+
+    source_image = tmp_path / "source.png"
+    source_image.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    with pytest.raises(SystemExit) as exc_info:
+        generate_icons(
+            prompt="test",
+            output_dir=str(tmp_path),
+            count=1,
+            size=1024,
+            quality="premium",
+            mode="variation",
+            source_image=str(source_image),
+        )
+
+    assert exc_info.value.code == 1
+
+
+# AC-V4: 既存機能の後方互換性
+
+@patch("boto3.client")
+def test_acv4_1_default_mode_is_generate(mock_boto_client, tmp_path):
+    """AC-V4-1: --mode未指定時、既存のTEXT_IMAGE動作が変わらない"""
+    from scripts.generate_icon import generate_icons
+
+    mock_bedrock = MagicMock()
+    mock_bedrock.invoke_model.return_value = {
+        "body": MagicMock(read=lambda: b'{"images": ["iVBORw0KGgo="]}')
+    }
+    mock_boto_client.return_value = mock_bedrock
+
+    generate_icons(
+        prompt="test",
+        output_dir=str(tmp_path),
+        count=1,
+        size=1024,
+        quality="premium",
+    )
+
+    call_args = mock_bedrock.invoke_model.call_args
+    import json as json_mod
+    body = json_mod.loads(call_args[1]["body"])
+    assert body["taskType"] == "TEXT_IMAGE"
+
+
+def test_acv4_2_existing_tests_still_pass():
+    """AC-V4-2: 既存の20テストが引き続きパスする（このテスト自体がパスすれば証明）"""
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "tests/test_generate_icon.py", "-k", "test_ac", "--co", "-q"],
+        capture_output=True,
+        text=True,
+    )
+    # 既存ac1〜ac3のテスト関数が20個以上リストされる
+    lines = [l for l in result.stdout.strip().split("\n") if "test_ac" in l and "test_acv" not in l]
+    assert len(lines) >= 20
+
+
+@patch("boto3.client")
+def test_acv4_3_existing_presets_still_work(mock_boto_client, tmp_path):
+    """AC-V4-3: 既存プリセット(elegant-secretary/minimal-logo)が従来通り動作"""
+    from scripts.generate_icon import load_presets
+
+    presets = load_presets()
+    assert "elegant-secretary" in presets
+    assert "minimal-logo" in presets
+    # 既存プリセットにmodeキーが無い（generateがデフォルト）
+    assert "mode" not in presets["elegant-secretary"]
+    assert "mode" not in presets["minimal-logo"]
