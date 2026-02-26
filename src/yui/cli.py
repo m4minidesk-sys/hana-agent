@@ -52,6 +52,26 @@ def main() -> None:
     # Meeting subcommand (AC-40 through AC-51)
     meeting_parser = subparsers.add_parser("meeting", help="Meeting transcription")
 
+    # Workshop subcommand (AC-82, AC-85)
+    workshop_parser = subparsers.add_parser("workshop", help="Workshop testing")
+    workshop_sub = workshop_parser.add_subparsers(dest="workshop_action", help="Workshop actions")
+
+    ws_test_parser = workshop_sub.add_parser("test", help="Run a workshop test")
+    ws_test_parser.add_argument("url", help="Workshop URL to test")
+    ws_test_parser.add_argument("--record", action="store_true", help="Record video")
+    ws_test_parser.add_argument("--cleanup", action="store_true", default=None, help="Cleanup AWS resources")
+    ws_test_parser.add_argument("--no-cleanup", action="store_true", help="Skip resource cleanup")
+    ws_test_parser.add_argument("--headed", action="store_true", help="Run browser in headed mode")
+    ws_test_parser.add_argument("--dry-run", action="store_true", help="Plan steps without executing")
+    ws_test_parser.add_argument("--steps", help="Step range (e.g. 1-5 or 1,3,5)")
+    ws_test_parser.add_argument("--cron", action="store_true", help="Regression mode for periodic testing")
+
+    ws_list_parser = workshop_sub.add_parser("list-tests", help="List past test runs")
+    ws_list_parser.add_argument("--limit", type=int, default=20, help="Max results")
+
+    ws_show_parser = workshop_sub.add_parser("show-report", help="Show a test report")
+    ws_show_parser.add_argument("test_id", help="Test ID to show")
+
     # MCP subcommand
     mcp_parser = subparsers.add_parser("mcp", help="Manage MCP server connections")
     mcp_sub = mcp_parser.add_subparsers(dest="mcp_action", help="MCP actions")
@@ -108,6 +128,11 @@ def main() -> None:
     # Handle meeting commands (AC-40 through AC-51)
     if args.command == "meeting":
         _handle_meeting(args, config)
+        return
+
+    # Handle workshop commands (AC-82 through AC-85)
+    if args.command == "workshop":
+        _handle_workshop(args, config)
         return
 
     # Handle MCP commands
@@ -253,6 +278,73 @@ def _handle_menubar(args: argparse.Namespace, config: dict) -> None:
     # Default: run menu bar app
     print("🎤 Starting Yui menu bar…")
     run_menubar(config)
+
+
+def _handle_workshop(args: argparse.Namespace, config: dict) -> None:
+    """Handle workshop subcommands (AC-82 through AC-85)."""
+    if not args.workshop_action:
+        print("Usage: yui workshop {test|list-tests|show-report}", file=sys.stderr)
+        sys.exit(1)
+
+    from yui.workshop.runner import WorkshopTestRunner
+
+    runner = WorkshopTestRunner(config)
+
+    if args.workshop_action == "test":
+        import asyncio
+
+        options: dict = {
+            "dry_run": args.dry_run,
+            "record": args.record,
+            "headed": args.headed,
+            "steps": args.steps,
+            "cron": getattr(args, "cron", False),
+        }
+        if args.no_cleanup:
+            options["cleanup"] = False
+        elif args.cleanup is True:
+            options["cleanup"] = True
+
+        if args.dry_run:
+            print("\U0001f50d Dry-run mode \u2014 planning steps without execution")
+        if getattr(args, "cron", False):
+            print("\U0001f504 Regression mode (cron) \u2014 automated periodic test")
+
+        print(f"\U0001f680 Starting workshop test: {args.url}")
+        test_run = asyncio.run(runner.run_test(args.url, options))
+
+        from yui.workshop.reporter import WorkshopReporter
+        reporter = WorkshopReporter()
+        print()
+        print(reporter.generate_slack_summary(test_run))
+
+    elif args.workshop_action == "list-tests":
+        tests = runner.list_tests()
+        if not tests:
+            print("No test runs found.")
+            return
+
+        limit = getattr(args, "limit", 20)
+        tests = tests[:limit]
+
+        hdr_tid = "Test ID"
+        hdr_mod = "Modified"
+        hdr_sz = "Size"
+        print(f"{hdr_tid:<20} {hdr_mod:<25} {hdr_sz:<10}")
+        print("-" * 55)
+        for t in tests:
+            tid = t["test_id"]
+            mod = t["modified"][:19]
+            sz = t["size"]
+            print(f"{tid:<20} {mod:<25} {sz:<10}")
+
+    elif args.workshop_action == "show-report":
+        report_content = runner.show_report(args.test_id)
+        if report_content is None:
+            print(f"Report not found for test ID: {args.test_id}", file=sys.stderr)
+            sys.exit(1)
+        print(report_content)
+
 
 
 def _handle_meeting(args: argparse.Namespace, config: dict) -> None:
