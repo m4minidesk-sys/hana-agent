@@ -1408,6 +1408,122 @@ all = ["yui-agent[meeting,ui,hotkey]"]
 
 ---
 
+## 10.6 AWS Workshop Auto-Execution Testing (Phase 4)
+
+### 10.6.1 Overview
+
+Yui provides automated workshop testing: given a workshop's content (Markdown, HTML, or Workshop Studio URL), Yui walks through each step, executes it in a real AWS account, validates the results, and produces a test report. This enables workshop authors to verify their content works end-to-end before publishing, and supports regression testing when AWS services change.
+
+### 10.6.2 Workflow
+
+```
+Workshop Content (MD/HTML/URL)
+  ↓ Content Parser
+Structured Steps (JSON)
+  ↓ Step Planner (Bedrock LLM)
+Executable Actions
+  ↓ Executor (CLI / CFn / HTTP / Browser)
+Step Results (PASS / FAIL / SKIP / TIMEOUT)
+  ↓ Reporter
+Test Report (Markdown) + Slack Notification
+  ↓ Cleanup
+AWS Resources Deleted
+```
+
+### 10.6.3 Step Types
+
+| Type | Description | Executor |
+|---|---|---|
+| `cfn_deploy` | CloudFormation stack create/update/delete | boto3 CloudFormation |
+| `cli_command` | AWS CLI or shell command execution | subprocess (safe_shell) |
+| `cli_check` | CLI output validation against expected result | subprocess + Bedrock LLM |
+| `http_test` | HTTP endpoint test (status code, body match) | requests / curl |
+| `console_navigate` | AWS Console UI interaction | AgentCore Browser |
+| `console_verify` | Console UI state verification | AgentCore Browser + Bedrock LLM |
+| `code_run` | Code execution (Python/Node/etc.) | subprocess or AgentCore CodeInterpreter |
+| `code_deploy` | SAM / CDK / Serverless Framework deploy | subprocess |
+| `manual_step` | Manual operation — LLM decides: skip or find alternative | — |
+| `wait` | Wait for resource readiness | polling with timeout |
+
+### 10.6.4 Content Sources
+
+- **Workshop Studio URL** (`catalog.workshops.aws/...`) → Browser scraping
+- **GitHub repository** → `git clone` or GitHub API
+- **Local path** → Direct file read (Markdown/HTML)
+
+### 10.6.5 Test Report
+
+```markdown
+# Workshop Test Report — {date}
+## Workshop: {title}
+## Source: {url}
+### Summary
+- Total Steps: N
+- Passed: X ✅ | Failed: Y ❌ | Skipped: Z ⏭
+- Duration: Xm Ys
+- AWS Cost (estimated): $X.XX
+### Failed Steps
+| # | Step | Error |
+|---|---|---|
+### Recommendations
+(LLM-generated fix suggestions for each failure)
+```
+
+### 10.6.6 Safety Controls
+
+- **Cost guard**: Configurable max cost per test run (default: $5). Test aborts if projected cost exceeds limit.
+- **Timeout**: Per-step timeout (default: 300s) and total test timeout (default: 60min).
+- **Cleanup**: `--cleanup` flag auto-deletes all created CloudFormation stacks after test.
+- **Account isolation**: Test in a dedicated AWS account (recommended: Workshop Studio Event provisioning or separate test account).
+- **Command allowlist**: Same safe_shell restrictions apply to workshop CLI commands.
+
+### 10.6.7 Config
+
+```yaml
+workshop:
+  test:
+    region: us-east-1
+    cleanup_after_test: true
+    timeout_per_step_seconds: 300
+    max_total_duration_minutes: 60
+    max_cost_usd: 5.0
+    browser_enabled: true
+  report:
+    format: markdown
+    slack_notify: true
+    save_path: ~/.yui/workshop-tests/
+```
+
+### 10.6.8 CLI
+
+```bash
+yui workshop test <url-or-path>              # Run workshop test
+yui workshop test <url> --cleanup            # Test + auto-cleanup
+yui workshop test <url> --dry-run            # Parse only, no execution
+yui workshop test <url> --steps 1-5          # Test specific steps
+yui workshop list-tests                       # List past test runs
+yui workshop show-report <test-id>           # Show specific report
+```
+
+### 10.6.9 Acceptance Criteria
+
+- [ ] AC-70: Workshop content parsed from Markdown/HTML into structured steps
+- [ ] AC-71: Bedrock LLM converts steps into executable actions
+- [ ] AC-72: AWS CLI commands executed and output captured
+- [ ] AC-73: CloudFormation stacks created/deleted automatically
+- [ ] AC-74: HTTP endpoints tested with status/body validation
+- [ ] AC-75: Bedrock LLM validates step results as PASS/FAIL/SKIP
+- [ ] AC-76: Structured test report generated in Markdown
+- [ ] AC-77: Slack notification with test summary
+- [ ] AC-78: `--cleanup` deletes all test-created AWS resources
+- [ ] AC-79: Cost guard aborts test when projected cost exceeds limit
+- [ ] AC-80: `yui workshop test <url>` CLI command works
+- [ ] AC-81: Per-step and total timeout enforced
+- [ ] AC-82: Console verification via AgentCore Browser (optional)
+- [ ] AC-83: Regression mode for periodic automated testing
+
+---
+
 ## 11. Daemon (Phase 3, macOS only)
 
 - launchd plist at `~/Library/LaunchAgents/com.yui.agent.plist`
