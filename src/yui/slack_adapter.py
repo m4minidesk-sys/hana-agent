@@ -64,6 +64,14 @@ def run_slack(config: Optional[dict] = None) -> None:
     keep_recent = session_config.get("keep_recent_messages", 5)
     session_manager = SessionManager(db_path, compaction_threshold, keep_recent)
 
+    def _safe_react(channel: str, timestamp: str, name: str) -> None:
+        """Add reaction, ignoring already_reacted errors."""
+        try:
+            app.client.reactions_add(channel=channel, timestamp=timestamp, name=name)
+        except Exception as e:
+            if "already_reacted" not in str(e):
+                logger.warning("Failed to add reaction %s: %s", name, e)
+
     @app.event("app_mention")
     def handle_mention(event: dict, say: callable) -> None:
         """Handle @Yui mentions."""
@@ -74,7 +82,7 @@ def run_slack(config: Optional[dict] = None) -> None:
             thread_ts = event.get("thread_ts") or event["ts"]
 
             # Acknowledge
-            app.client.reactions_add(channel=channel, timestamp=event["ts"], name="eyes")
+            _safe_react(channel, event["ts"], "eyes")
 
             # Session ID
             session_id = f"slack:{channel}:{user}"
@@ -94,7 +102,7 @@ def run_slack(config: Optional[dict] = None) -> None:
             say(text=response, thread_ts=thread_ts)
 
             # Mark done
-            app.client.reactions_add(channel=channel, timestamp=event["ts"], name="white_check_mark")
+            _safe_react(channel, event["ts"], "white_check_mark")
 
             # Check compaction
             if session_manager.get_message_count(session_id) > compaction_threshold:
@@ -117,7 +125,7 @@ def run_slack(config: Optional[dict] = None) -> None:
             text = event["text"]
 
             # Acknowledge
-            app.client.reactions_add(channel=channel, timestamp=event["ts"], name="eyes")
+            _safe_react(channel, event["ts"], "eyes")
 
             # Session ID
             session_id = f"slack:dm:{user}"
@@ -137,7 +145,7 @@ def run_slack(config: Optional[dict] = None) -> None:
             say(text=response)
 
             # Mark done
-            app.client.reactions_add(channel=channel, timestamp=event["ts"], name="white_check_mark")
+            _safe_react(channel, event["ts"], "white_check_mark")
 
             # Check compaction
             if session_manager.get_message_count(session_id) > compaction_threshold:
