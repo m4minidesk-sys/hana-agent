@@ -83,6 +83,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "slack_notify": True,
         },
         "retention_days": 90,
+        "hotkeys": {
+            "enabled": True,
+            "toggle_recording": "<cmd>+<shift>+r",
+            "stop_generate": "<cmd>+<shift>+s",
+            "open_minutes": "<cmd>+<shift>+m",
+        },
     },
     "runtime": {
         "session": {

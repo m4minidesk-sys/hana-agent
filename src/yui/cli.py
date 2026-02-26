@@ -40,6 +40,15 @@ def main() -> None:
     daemon_parser = subparsers.add_parser("daemon", help="Manage Yui daemon")
     daemon_parser.add_argument("action", choices=["start", "stop", "status"], help="Daemon action")
 
+    # Menubar subcommand (AC-52 through AC-61)
+    menubar_parser = subparsers.add_parser("menubar", help="Menu bar UI for meetings")
+    menubar_parser.add_argument(
+        "--install", action="store_true", help="Install LaunchAgent for auto-start"
+    )
+    menubar_parser.add_argument(
+        "--uninstall", action="store_true", help="Remove LaunchAgent"
+    )
+
     # Meeting subcommand (AC-40 through AC-51)
     meeting_parser = subparsers.add_parser("meeting", help="Meeting transcription")
     meeting_sub = meeting_parser.add_subparsers(dest="meeting_action", help="Meeting actions")
@@ -76,6 +85,11 @@ def main() -> None:
             daemon_stop(config)
         elif args.action == "status":
             daemon_status(config)
+        return
+
+    # Handle menubar commands (AC-52 through AC-61)
+    if args.command == "menubar":
+        _handle_menubar(args, config)
         return
 
     # Handle meeting commands (AC-40 through AC-51)
@@ -123,6 +137,41 @@ def _run_repl(config: dict) -> None:
             continue
         except Exception as e:
             print(f"\n[yui] Error: {e}\n", file=sys.stderr)
+
+
+def _handle_menubar(args: argparse.Namespace, config: dict) -> None:
+    """Handle menubar subcommands (AC-52 through AC-61)."""
+    try:
+        from yui.meeting.menubar import (
+            install_launchd,
+            run_menubar,
+            uninstall_launchd,
+        )
+    except ImportError as e:
+        print(
+            f"[yui] Menu bar requires additional packages: {e}\n"
+            "Install with: pip install yui-agent[ui]",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if args.install:
+        plist_path = install_launchd()
+        print(f"✅ LaunchAgent installed: {plist_path}")
+        print("   Yui menu bar will start automatically on login.")
+        return
+
+    if args.uninstall:
+        removed = uninstall_launchd()
+        if removed:
+            print("✅ LaunchAgent removed. Menu bar will no longer auto-start.")
+        else:
+            print("ℹ️  LaunchAgent not found — nothing to remove.")
+        return
+
+    # Default: run menu bar app
+    print("🎤 Starting Yui menu bar…")
+    run_menubar(config)
 
 
 def _handle_meeting(args: argparse.Namespace, config: dict) -> None:

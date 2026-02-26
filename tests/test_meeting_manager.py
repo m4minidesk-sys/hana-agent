@@ -181,7 +181,8 @@ class TestMeetingManagerStop:
         time.sleep(0.3)
         meeting = manager.stop()
 
-        assert meeting.status == MeetingStatus.STOPPED
+        # Status is COMPLETED because auto-minutes generation runs on stop
+        assert meeting.status == MeetingStatus.COMPLETED
         assert meeting.stop_time is not None
         assert meeting.duration_seconds > 0
 
@@ -220,7 +221,8 @@ class TestMeetingManagerStop:
 
         meta_path = tmp_path / "meetings" / meeting.meeting_id / "metadata.json"
         meta = json.loads(meta_path.read_text())
-        assert meta["status"] == "stopped"
+        # Status is "completed" because auto-minutes generation runs on stop
+        assert meta["status"] == "completed"
         assert meta["stop_time"] is not None
 
     def test_stop_raises_if_not_recording(self, tmp_path):

@@ -46,3 +46,18 @@ runtime:
   session:
     compaction_threshold: 0.8
     keep_recent_messages: 5
+
+meeting:
+  analysis:
+    provider: bedrock
+    realtime_enabled: false           # Enable real-time analysis during meetings (~$0.90/hr)
+    realtime_interval_seconds: 60     # Analysis interval in seconds
+    realtime_window_minutes: 5        # Sliding window size
+    max_cost_per_meeting_usd: 2.0     # Budget guard
+    minutes_auto_generate: true       # Auto-generate minutes on stop
+  output:
+    transcript_dir: ~/.yui/meetings/
+    format: markdown
+    save_audio: false
+    slack_notify: true                # Post minutes to Slack
+    slack_channel: ""                 # Slack channel ID for notifications

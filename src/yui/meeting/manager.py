@@ -2,6 +2,11 @@
 
 Orchestrates AudioRecorder + WhisperTranscriber to provide
 start/stop/status/list/search functionality.
+
+Phase 2.5b additions:
+- Minutes auto-generation on stop (Bedrock Converse API)
+- Real-time analysis during recording (opt-in, 60s interval)
+- Slack notification with meeting summary
 """
 
 from __future__ import annotations
@@ -61,13 +66,18 @@ class MeetingManager:
         config: dict[str, Any],
         recorder: Optional[Any] = None,
         transcriber: Optional[Any] = None,
+        bedrock_client: Optional[Any] = None,
+        slack_client: Optional[Any] = None,
     ) -> None:
         self._config = config
         self._meeting_config = MeetingConfig.from_config(config)
         self._recorder = recorder
         self._transcriber = transcriber
+        self._bedrock_client = bedrock_client
+        self._slack_client = slack_client
         self._current_meeting: Optional[Meeting] = None
         self._transcription_thread: Optional[threading.Thread] = None
+        self._analysis_thread: Optional[threading.Thread] = None
         self._running = False
 
     def _ensure_recorder(self) -> Any:
@@ -160,6 +170,18 @@ class MeetingManager:
         )
         self._transcription_thread.start()
 
+        # Start real-time analysis if enabled
+        analysis_cfg = self._config.get("meeting", {}).get("analysis", {})
+        if analysis_cfg.get("realtime_enabled", False):
+            self._analysis_thread = threading.Thread(
+                target=self._analysis_loop,
+                daemon=True,
+                name="yui-realtime-analysis",
+            )
+            self._analysis_thread.start()
+            logger.info("Real-time analysis enabled (interval: %ds)",
+                        analysis_cfg.get("realtime_interval_seconds", 60))
+
         # Save initial metadata
         meeting.save_metadata(Path(meeting.metadata_path))
 
@@ -195,6 +217,11 @@ class MeetingManager:
             self._transcription_thread.join(timeout=10.0)
             self._transcription_thread = None
 
+        # Wait for analysis thread to finish
+        if self._analysis_thread:
+            self._analysis_thread.join(timeout=5.0)
+            self._analysis_thread = None
+
         # Finalize meeting
         meeting.status = MeetingStatus.STOPPED
         meeting.stop_time = datetime.now().isoformat()
@@ -208,6 +235,15 @@ class MeetingManager:
             meeting.save_transcript(Path(meeting.transcript_path))
         if meeting.metadata_path:
             meeting.save_metadata(Path(meeting.metadata_path))
+
+        # --- Phase 2.5b: Auto-generate minutes ---
+        analysis_cfg = self._config.get("meeting", {}).get("analysis", {})
+        if analysis_cfg.get("minutes_auto_generate", True):
+            try:
+                self._generate_minutes(meeting)
+            except Exception as e:
+                logger.error("Failed to generate minutes: %s", e)
+                # Don't fail the stop — minutes are best-effort
 
         logger.info(
             f"Meeting stopped: {meeting.meeting_id} "
@@ -362,3 +398,107 @@ class MeetingManager:
 
             if result and self._current_meeting:
                 self._current_meeting.add_chunk(result)
+
+    def _generate_minutes(self, meeting: Meeting) -> None:
+        """Generate and save meeting minutes via Bedrock.
+
+        Called automatically by stop() when minutes_auto_generate is True.
+        Updates meeting status to GENERATING_MINUTES, then COMPLETED.
+
+        Args:
+            meeting: The completed Meeting object.
+        """
+        from yui.meeting.minutes import (
+            notify_slack_minutes,
+            post_meeting_minutes,
+            save_minutes,
+        )
+
+        meeting.status = MeetingStatus.GENERATING_MINUTES
+
+        transcript = meeting.get_full_transcript()
+        meeting_dir = self._meeting_config.get_meeting_dir(meeting.meeting_id)
+
+        # Generate minutes via Bedrock
+        minutes_text = post_meeting_minutes(
+            transcript=transcript,
+            config=self._config,
+            meeting_name=meeting.name,
+            meeting_date=meeting.start_time,
+            bedrock_client=self._bedrock_client,
+        )
+
+        # Save minutes.md
+        save_minutes(minutes_text, meeting_dir)
+
+        # Send Slack notification
+        try:
+            notify_slack_minutes(
+                minutes_text=minutes_text,
+                meeting_name=meeting.name,
+                meeting_id=meeting.meeting_id,
+                config=self._config,
+                slack_client=self._slack_client,
+            )
+        except Exception as e:
+            logger.warning("Slack notification failed (non-fatal): %s", e)
+
+        meeting.status = MeetingStatus.COMPLETED
+        logger.info("Minutes generated for meeting %s", meeting.meeting_id)
+
+        # Update metadata with final status
+        if meeting.metadata_path:
+            meeting.save_metadata(Path(meeting.metadata_path))
+
+    def _analysis_loop(self) -> None:
+        """Background loop: real-time analysis at configured interval.
+
+        Sends the last N minutes of transcript to Bedrock for live insights.
+        Results are appended to analysis.md in the meeting directory.
+        """
+        from yui.meeting.minutes import real_time_analysis, save_analysis
+
+        analysis_cfg = self._config.get("meeting", {}).get("analysis", {})
+        interval = analysis_cfg.get("realtime_interval_seconds", 60)
+        window_minutes = analysis_cfg.get("realtime_window_minutes", 5)
+        window_seconds = window_minutes * 60
+
+        while self._running:
+            time.sleep(interval)
+
+            if not self._running or not self._current_meeting:
+                break
+
+            meeting = self._current_meeting
+            chunks = meeting.chunks
+
+            if not chunks:
+                continue
+
+            # Build sliding window: last N minutes of transcript
+            latest_time = chunks[-1].end_time if chunks else 0
+            window_start = max(0, latest_time - window_seconds)
+
+            window_text = "\n".join(
+                c.text for c in chunks
+                if c.start_time >= window_start and c.text.strip()
+            )
+
+            if not window_text.strip():
+                continue
+
+            try:
+                result = real_time_analysis(
+                    transcript_window=window_text,
+                    config=self._config,
+                    bedrock_client=self._bedrock_client,
+                )
+
+                # Save to analysis.md
+                meeting_dir = self._meeting_config.get_meeting_dir(meeting.meeting_id)
+                save_analysis(result, meeting_dir)
+
+                logger.debug("Real-time analysis updated for %s", meeting.meeting_id)
+
+            except Exception as e:
+                logger.warning("Real-time analysis iteration failed: %s", e)

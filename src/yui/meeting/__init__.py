@@ -1,7 +1,8 @@
 """Meeting transcription package for Yui.
 
-Provides audio capture, Whisper transcription, and meeting lifecycle management.
-Requires optional dependencies: pip install yui-agent[meeting]
+Provides audio capture, Whisper transcription, meeting lifecycle management,
+menu bar UI, global hotkeys, and IPC communication.
+Requires optional dependencies: pip install yui-agent[meeting,ui,hotkey]
 """
 
 __all__ = [
@@ -11,6 +12,12 @@ __all__ = [
     "Meeting",
     "TranscriptChunk",
     "MeetingConfig",
+    "IPCServer",
+    "IPCClient",
+    "YuiMenuBarApp",
+    "GlobalHotkeys",
+    "post_meeting_minutes",
+    "real_time_analysis",
 ]
 
 
@@ -45,9 +52,9 @@ from yui.meeting.manager import MeetingManager  # noqa: E402
 
 
 def __getattr__(name: str):
-    """Lazy import for AudioRecorder and WhisperTranscriber.
+    """Lazy import for AudioRecorder, WhisperTranscriber, and optional UI/IPC.
 
-    These require numpy/sounddevice/mlx-whisper, so only import on access.
+    These require extra dependencies, so only import on access.
     """
     if name == "AudioRecorder":
         from yui.meeting.recorder import AudioRecorder
@@ -55,4 +62,22 @@ def __getattr__(name: str):
     if name == "WhisperTranscriber":
         from yui.meeting.transcriber import WhisperTranscriber
         return WhisperTranscriber
+    if name == "IPCServer":
+        from yui.meeting.ipc import IPCServer
+        return IPCServer
+    if name == "IPCClient":
+        from yui.meeting.ipc import IPCClient
+        return IPCClient
+    if name == "YuiMenuBarApp":
+        from yui.meeting.menubar import YuiMenuBarApp
+        return YuiMenuBarApp
+    if name == "GlobalHotkeys":
+        from yui.meeting.hotkeys import GlobalHotkeys
+        return GlobalHotkeys
+    if name == "post_meeting_minutes":
+        from yui.meeting.minutes import post_meeting_minutes
+        return post_meeting_minutes
+    if name == "real_time_analysis":
+        from yui.meeting.minutes import real_time_analysis
+        return real_time_analysis
     raise AttributeError(f"module 'yui.meeting' has no attribute {name!r}")
