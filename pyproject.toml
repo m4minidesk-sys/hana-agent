@@ -51,8 +51,11 @@ ui = [
 hotkey = [
     "pynput>=1.7",
 ]
+workshop = [
+    "playwright>=1.40",
+]
 all = [
-    "yui-agent[meeting,ui,hotkey]",
+    "yui-agent[meeting,ui,hotkey,workshop]",
 ]
 
 [project.scripts]
