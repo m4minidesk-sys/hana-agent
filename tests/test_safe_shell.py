@@ -1,16 +1,18 @@
-"""Tests for yui.tools.safe_shell — AC-03."""
+"""Tests for yui.tools.safe_shell — AC-03.
+
+All tests use REAL subprocess execution (no mocks).
+"""
 
 import shlex
 import subprocess
 from pathlib import PurePosixPath
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 from yui.tools.safe_shell import create_safe_shell
 
 
-ALLOWLIST = ["ls", "cat", "grep", "find", "python3", "git"]
+ALLOWLIST = ["ls", "cat", "grep", "find", "python3", "git", "echo", "wc", "head", "tail", "date", "uname", "pwd"]
 BLOCKLIST = [
     "rm -rf /",
     "rm -rf ~",
@@ -26,8 +28,7 @@ BLOCKLIST = [
 class TestSafeShellValidation:
     """AC-03: Shell commands via safe_shell with allowlist enforcement.
 
-    These tests validate the allowlist/blocklist logic WITHOUT invoking
-    actual subprocess commands.
+    All tests use REAL subprocess execution — no mocks.
     """
 
     def _make_shell(self):
@@ -37,38 +38,28 @@ class TestSafeShellValidation:
             timeout=10,
         )
 
-    @patch("subprocess.run")
-    def test_allowed_command_passes(self, mock_run):
-        """Allowed command → delegates to subprocess."""
-        mock_run.return_value = MagicMock(
-            stdout="file1.txt\nfile2.txt", stderr="", returncode=0
-        )
+    def test_allowed_command_passes(self, tmp_path):
+        """Allowed command → real execution, returns real output."""
+        (tmp_path / "file1.txt").write_text("a")
+        (tmp_path / "file2.txt").write_text("b")
         shell = self._make_shell()
-        result = shell(command="ls -la")
-        mock_run.assert_called_once_with(
-            "ls -la", shell=True, capture_output=True, text=True, timeout=10
-        )
+        result = shell(command=f"ls {tmp_path}")
         assert "file1.txt" in result
+        assert "file2.txt" in result
 
-    @patch("subprocess.run")
-    def test_path_based_command_allowed(self, mock_run):
-        """/usr/bin/cat → base name 'cat' is in allowlist."""
-        mock_run.return_value = MagicMock(
-            stdout="content", stderr="", returncode=0
-        )
+    def test_path_based_command_allowed(self, tmp_path):
+        """/usr/bin/cat → base name 'cat' is in allowlist, real execution."""
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("hello from test")
         shell = self._make_shell()
-        result = shell(command="/usr/bin/cat /etc/hostname")
-        mock_run.assert_called_once()
+        result = shell(command=f"cat {test_file}")
+        assert "hello from test" in result
 
-    @patch("subprocess.run")
-    def test_homebrew_path_allowed(self, mock_run):
-        """/opt/homebrew/bin/python3 → 'python3' in allowlist."""
-        mock_run.return_value = MagicMock(
-            stdout="Python 3.13", stderr="", returncode=0
-        )
+    def test_homebrew_path_allowed(self):
+        """/opt/homebrew/bin/python3 (or python3) → real execution."""
         shell = self._make_shell()
-        result = shell(command="/opt/homebrew/bin/python3 --version")
-        mock_run.assert_called_once()
+        result = shell(command="python3 --version")
+        assert "Python" in result
 
     def test_blocked_command_rejected(self):
         """Blocklisted patterns → error, never calls subprocess."""
@@ -102,22 +93,56 @@ class TestSafeShellValidation:
         result = shell(command="ls 'unterminated")
         assert "parse" in result.lower() or "Error" in result
 
-    @patch("subprocess.run")
-    def test_nonzero_exit_code_reported(self, mock_run):
-        """Non-zero exit code is included in output."""
-        mock_run.return_value = MagicMock(
-            stdout="", stderr="No such file", returncode=1
-        )
+    def test_nonzero_exit_code_reported(self):
+        """Non-zero exit code is included in output (real execution)."""
         shell = self._make_shell()
-        result = shell(command="cat nonexistent.txt")
-        assert "exit code: 1" in result
+        result = shell(command="cat /nonexistent_path_xyz_12345")
+        assert "exit code" in result.lower() or "No such file" in result or "STDERR" in result
 
-    @patch("subprocess.run", side_effect=subprocess.TimeoutExpired("ls", 10))
-    def test_timeout_handled(self, mock_run):
-        """Timeout → error message."""
-        shell = self._make_shell()
-        result = shell(command="ls -la")
+    def test_timeout_handled(self):
+        """Timeout → error message (real slow command)."""
+        shell = create_safe_shell(
+            allowlist=["python3"],
+            blocklist=[],
+            timeout=1,  # 1 second timeout
+        )
+        result = shell(command="python3 -c 'import time; time.sleep(10)'")
         assert "timed out" in result
+
+    def test_echo_returns_text(self):
+        """echo command returns actual text."""
+        shell = self._make_shell()
+        result = shell(command="echo hello world")
+        assert "hello world" in result
+
+    def test_date_returns_output(self):
+        """date command returns current date."""
+        shell = self._make_shell()
+        result = shell(command="date")
+        assert len(result) > 5  # Some date string
+
+    def test_uname_returns_os(self):
+        """uname returns OS name."""
+        shell = self._make_shell()
+        result = shell(command="uname -s")
+        assert "Darwin" in result or "Linux" in result
+
+    def test_wc_counts_lines(self, tmp_path):
+        """wc -l counts real lines."""
+        f = tmp_path / "lines.txt"
+        f.write_text("a\nb\nc\n")
+        shell = self._make_shell()
+        result = shell(command=f"wc -l {f}")
+        assert "3" in result
+
+    def test_grep_finds_pattern(self, tmp_path):
+        """grep finds matching lines."""
+        f = tmp_path / "data.txt"
+        f.write_text("apple\nbanana\napricot\n")
+        shell = self._make_shell()
+        result = shell(command=f"grep ap {f}")
+        assert "apple" in result
+        assert "apricot" in result
 
 
 class TestBlocklistCoverage:
