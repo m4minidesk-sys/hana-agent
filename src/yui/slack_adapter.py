@@ -2,6 +2,7 @@
 
 import logging
 import os
+import threading
 import traceback
 from pathlib import Path
 from typing import Optional
@@ -64,6 +65,9 @@ def run_slack(config: Optional[dict] = None) -> None:
     keep_recent = session_config.get("keep_recent_messages", 5)
     session_manager = SessionManager(db_path, compaction_threshold, keep_recent)
 
+    # Lock to prevent concurrent agent invocations (Strands SDK limitation)
+    agent_lock = threading.Lock()
+
     def _safe_react(channel: str, timestamp: str, name: str) -> None:
         """Add reaction, ignoring already_reacted errors."""
         try:
@@ -91,9 +95,16 @@ def run_slack(config: Optional[dict] = None) -> None:
             # Add user message
             session_manager.add_message(session_id, "user", text)
 
-            # Get response
-            result = agent(text)
-            response = str(result)
+            # Get response (serialized — Strands Agent is not thread-safe)
+            acquired = agent_lock.acquire(timeout=120)
+            if not acquired:
+                say(text="⏳ 他のリクエストを処理中です。少々お待ちください…", thread_ts=thread_ts)
+                return
+            try:
+                result = agent(text)
+                response = str(result)
+            finally:
+                agent_lock.release()
 
             # Add assistant message
             session_manager.add_message(session_id, "assistant", response)
@@ -134,9 +145,16 @@ def run_slack(config: Optional[dict] = None) -> None:
             # Add user message
             session_manager.add_message(session_id, "user", text)
 
-            # Get response
-            result = agent(text)
-            response = str(result)
+            # Get response (serialized — Strands Agent is not thread-safe)
+            acquired = agent_lock.acquire(timeout=120)
+            if not acquired:
+                say(text="⏳ 他のリクエストを処理中です。少々お待ちください…")
+                return
+            try:
+                result = agent(text)
+                response = str(result)
+            finally:
+                agent_lock.release()
 
             # Add assistant message
             session_manager.add_message(session_id, "assistant", response)

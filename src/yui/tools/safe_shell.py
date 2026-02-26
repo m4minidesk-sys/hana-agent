@@ -1,10 +1,13 @@
 """Safe shell tool with allowlist/blocklist enforcement."""
 
+import logging
 import shlex
+import subprocess
 from pathlib import PurePosixPath
 
 from strands import tool
-from strands_tools.shell import shell as strands_shell
+
+logger = logging.getLogger(__name__)
 
 
 def create_safe_shell(allowlist: list[str], blocklist: list[str], timeout: int):
@@ -60,8 +63,25 @@ def create_safe_shell(allowlist: list[str], blocklist: list[str], timeout: int):
                 f"Allowed commands: {', '.join(sorted(allowlist))}"
             )
 
-        # Execute via strands shell tool
-        result = strands_shell(command=command, timeout=timeout)
-        return result
+        # Execute directly via subprocess (no interactive confirmation)
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+            output = result.stdout
+            if result.stderr:
+                output += f"\nSTDERR: {result.stderr}"
+            if result.returncode != 0:
+                output += f"\n[exit code: {result.returncode}]"
+            return output.strip() if output.strip() else "(no output)"
+        except subprocess.TimeoutExpired:
+            return f"Error: command timed out after {timeout} seconds"
+        except Exception as e:
+            logger.error("Shell execution error: %s", e)
+            return f"Error: {e}"
 
     return safe_shell

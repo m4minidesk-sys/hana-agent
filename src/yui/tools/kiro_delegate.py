@@ -39,6 +39,7 @@ def kiro_delegate(task: str, working_directory: str = ".") -> str:
         output = result.stdout + result.stderr
         # Strip ANSI codes
         clean_output = re.sub(r"\x1b\[[0-9;]*m", "", output)
+        logger.info("Kiro CLI output (%d chars): %s", len(clean_output), clean_output[:500])
         return clean_output
 
     except subprocess.TimeoutExpired:
