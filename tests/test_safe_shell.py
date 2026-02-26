@@ -1,6 +1,7 @@
 """Tests for yui.tools.safe_shell — AC-03."""
 
 import shlex
+import subprocess
 from pathlib import PurePosixPath
 from unittest.mock import MagicMock, patch
 
@@ -26,7 +27,7 @@ class TestSafeShellValidation:
     """AC-03: Shell commands via safe_shell with allowlist enforcement.
 
     These tests validate the allowlist/blocklist logic WITHOUT invoking
-    the actual strands shell (which requires Bedrock credentials).
+    actual subprocess commands.
     """
 
     def _make_shell(self):
@@ -36,33 +37,41 @@ class TestSafeShellValidation:
             timeout=10,
         )
 
-    @patch("yui.tools.safe_shell.strands_shell")
-    def test_allowed_command_passes(self, mock_shell):
-        """Allowed command → delegates to strands shell."""
-        mock_shell.return_value = "file1.txt\nfile2.txt"
+    @patch("subprocess.run")
+    def test_allowed_command_passes(self, mock_run):
+        """Allowed command → delegates to subprocess."""
+        mock_run.return_value = MagicMock(
+            stdout="file1.txt\nfile2.txt", stderr="", returncode=0
+        )
         shell = self._make_shell()
         result = shell(command="ls -la")
-        mock_shell.assert_called_once_with(command="ls -la", timeout=10)
+        mock_run.assert_called_once_with(
+            "ls -la", shell=True, capture_output=True, text=True, timeout=10
+        )
         assert "file1.txt" in result
 
-    @patch("yui.tools.safe_shell.strands_shell")
-    def test_path_based_command_allowed(self, mock_shell):
+    @patch("subprocess.run")
+    def test_path_based_command_allowed(self, mock_run):
         """/usr/bin/cat → base name 'cat' is in allowlist."""
-        mock_shell.return_value = "content"
+        mock_run.return_value = MagicMock(
+            stdout="content", stderr="", returncode=0
+        )
         shell = self._make_shell()
         result = shell(command="/usr/bin/cat /etc/hostname")
-        mock_shell.assert_called_once()
+        mock_run.assert_called_once()
 
-    @patch("yui.tools.safe_shell.strands_shell")
-    def test_homebrew_path_allowed(self, mock_shell):
+    @patch("subprocess.run")
+    def test_homebrew_path_allowed(self, mock_run):
         """/opt/homebrew/bin/python3 → 'python3' in allowlist."""
-        mock_shell.return_value = "Python 3.13"
+        mock_run.return_value = MagicMock(
+            stdout="Python 3.13", stderr="", returncode=0
+        )
         shell = self._make_shell()
         result = shell(command="/opt/homebrew/bin/python3 --version")
-        mock_shell.assert_called_once()
+        mock_run.assert_called_once()
 
     def test_blocked_command_rejected(self):
-        """Blocklisted patterns → error, never calls strands shell."""
+        """Blocklisted patterns → error, never calls subprocess."""
         shell = self._make_shell()
         for blocked_cmd in [
             "rm -rf /",
@@ -92,6 +101,23 @@ class TestSafeShellValidation:
         shell = self._make_shell()
         result = shell(command="ls 'unterminated")
         assert "parse" in result.lower() or "Error" in result
+
+    @patch("subprocess.run")
+    def test_nonzero_exit_code_reported(self, mock_run):
+        """Non-zero exit code is included in output."""
+        mock_run.return_value = MagicMock(
+            stdout="", stderr="No such file", returncode=1
+        )
+        shell = self._make_shell()
+        result = shell(command="cat nonexistent.txt")
+        assert "exit code: 1" in result
+
+    @patch("subprocess.run", side_effect=subprocess.TimeoutExpired("ls", 10))
+    def test_timeout_handled(self, mock_run):
+        """Timeout → error message."""
+        shell = self._make_shell()
+        result = shell(command="ls -la")
+        assert "timed out" in result
 
 
 class TestBlocklistCoverage:
