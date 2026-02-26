@@ -104,17 +104,26 @@ def _register_phase2_tools(config: dict) -> list:
     except ImportError:
         logger.warning("git_tool not available")
 
-    # Kiro CLI tool (check binary exists)
-    kiro_path = Path(config["tools"]["kiro"]["binary_path"]).expanduser()
-    if kiro_path.exists():
+    # Kiro CLI tools — availability check (AC-78) + registration
+    from yui.tools.kiro_tools import check_kiro_available
+
+    kiro_available = check_kiro_available()
+    if kiro_available:
         try:
             from yui.tools.kiro_delegate import kiro_delegate
+            from yui.tools.kiro_tools import kiro_implement, kiro_review
+
             tools.append(kiro_delegate)
-            logger.info("Registered kiro_delegate")
+            tools.append(kiro_review)
+            tools.append(kiro_implement)
+            logger.info("Registered kiro_delegate, kiro_review, kiro_implement")
         except ImportError:
-            logger.warning("kiro_delegate not available")
+            logger.warning("Kiro tools not available")
     else:
-        logger.info("Kiro CLI not found at %s — skipping kiro_delegate", kiro_path)
+        logger.warning(
+            "Kiro CLI not found — kiro_delegate, kiro_review, kiro_implement disabled. "
+            "Install: curl -fsSL https://kiro.dev/install | bash"
+        )
 
     # AgentCore tools (check boto3 available)
     try:
