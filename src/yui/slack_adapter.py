@@ -123,11 +123,26 @@ def run_slack(config: Optional[dict] = None) -> None:
             logger.error("Error handling mention: %s", traceback.format_exc())
             say(text=f"Error: {e}", thread_ts=thread_ts)
 
+    # Get bot user ID for dedup filtering
+    try:
+        _auth = app.client.auth_test()
+        _bot_user_id = _auth["user_id"]
+        logger.info("Bot user ID: %s", _bot_user_id)
+    except Exception:
+        _bot_user_id = None
+        logger.warning("Could not determine bot user ID for dedup")
+
     @app.event("message")
     def handle_dm(event: dict, say: callable) -> None:
-        """Handle DMs."""
+        """Handle DMs and mpim messages (non-mention)."""
         # Skip bot messages and threaded replies
         if event.get("subtype") or event.get("thread_ts"):
+            return
+
+        # Skip messages that contain @mention of this bot — those are
+        # handled by handle_mention to avoid duplicate responses (#17)
+        text = event.get("text", "")
+        if _bot_user_id and f"<@{_bot_user_id}>" in text:
             return
 
         try:
