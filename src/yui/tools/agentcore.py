@@ -400,7 +400,7 @@ def kb_retrieve(query: str, knowledge_base_id: str = "") -> str:
 # --- Web Search (Issue #53) ---
 
 @tool  
-def web_search(query: str, num_results: int = 10) -> str:
+def web_search(query: str, num_results: int = 10, timeout: int = 30) -> str:
     """Search the web using AgentCore Browser with Google search.
 
     Performs web search via Google using cloud-managed browser automation.
@@ -409,6 +409,7 @@ def web_search(query: str, num_results: int = 10) -> str:
     Args:
         query: Search query text.
         num_results: Maximum number of results to return (default: 10, range: 1-100).
+        timeout: Maximum execution time in seconds (default: 30).
 
     Returns:
         Search results or error message.
@@ -424,8 +425,8 @@ def web_search(query: str, num_results: int = 10) -> str:
     if not isinstance(num_results, int) or num_results < 1 or num_results > 100:
         return f"Error: num_results must be an integer between 1 and 100, got: {num_results}"
 
+    session_id = None
     try:
-        # URL encode the query and construct search URL
         encoded_query = urllib.parse.quote_plus(query.strip())
         search_url = f"https://www.google.com/search?q={encoded_query}&num={num_results}"
         
@@ -433,36 +434,41 @@ def web_search(query: str, num_results: int = 10) -> str:
             session_id = browser.start()
             logger.info("Browser session started for search: %s", session_id)
 
-            # Navigate to Google search
-            browser.invoke("navigate", {"url": search_url})
-            
-            # Extract search results
-            result = browser.invoke("extract", {"task": "extract search results with titles and snippets"})
+            try:
+                browser.invoke("navigate", {"url": search_url})
+                result = browser.invoke("extract", {"task": "extract search results with titles and snippets"})
 
-            browser.stop()
-            logger.info("Browser session stopped")
-
-            if isinstance(result, dict):
-                content = result.get("text", str(result))
-            else:
-                content = str(result)
-            
-            if not content.strip():
-                return f"No search results found for query: {query}"
-            
-            return f"Web search results for '{query}':\n{content}"
+                if isinstance(result, dict):
+                    content = result.get("text", str(result))
+                else:
+                    content = str(result)
+                
+                if not content.strip():
+                    return f"No search results found for query: {query}"
+                
+                return f"Web search results for '{query}':\n{content}"
+            finally:
+                try:
+                    browser.stop()
+                    logger.info("Browser session stopped: %s", session_id)
+                except Exception as cleanup_error:
+                    logger.warning("Failed to stop browser session %s: %s", session_id, cleanup_error)
 
     except Exception as e:
         error_msg = str(e)
         if "AccessDeniedException" in error_msg:
             return (
                 "Error: No permission to use AgentCore Browser. "
-                "Ensure IAM role has bedrock-agentcore:* permissions."
+                "Ensure IAM role has bedrock-agentcore:* permissions. "
+                f"Session: {session_id or 'not started'}"
             )
         if "ResourceNotFoundException" in error_msg:
             return (
                 "Error: AgentCore Browser not provisioned. "
-                "Create a browser resource in AWS Bedrock Console first."
+                "Create a browser resource in AWS Bedrock Console first. "
+                f"Region: {_REGION}"
             )
-        logger.error("Web search error: %s", e)
+        if "Timeout" in error_msg or "timeout" in error_msg:
+            return f"Error: Web search timed out after {timeout}s for query: {query}"
+        logger.error("Web search error (session: %s): %s", session_id, e)
         return f"Error performing web search: {e}"

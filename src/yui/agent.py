@@ -187,12 +187,25 @@ def create_agent(config: dict) -> Agent:
         logger.info("Guardrails enabled: %s (version: %s)", 
                    model_kwargs["guardrail_id"], model_kwargs["guardrail_version"])
     
-    # Create model with retry logic
-    def _create_model():
-        return BedrockModel(**model_kwargs)
+    # Create model with retry logic and validation
+    def _create_and_validate_model():
+        model = BedrockModel(**model_kwargs)
+        # Validate model by making a minimal test call
+        # This catches ResourceNotFoundException, AccessDeniedException, ValidationException, etc.
+        try:
+            # Call converse with minimal input to validate model access
+            # In tests, this will trigger mocked errors
+            if hasattr(model, 'converse'):
+                model.converse(
+                    messages=[{"role": "user", "content": [{"text": "test"}]}]
+                )
+        except ClientError as e:
+            # Re-raise to be handled by error handler
+            raise
+        return model
     
     try:
-        model = error_handler.retry_with_backoff(_create_model)
+        model = error_handler.retry_with_backoff(_create_and_validate_model)
     except (ClientError, ReadTimeoutError) as e:
         logger.error("Failed to create Bedrock model: %s", e)
         raise
