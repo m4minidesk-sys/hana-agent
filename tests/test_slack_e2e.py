@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from yui.session import SessionManager
 from yui.slack_adapter import SlackHandler, _load_tokens, _summarize_messages
 
 
@@ -533,6 +534,375 @@ class TestCompactionSummary:
         assert "assistant: I'm fine!" in summary
         # Content truncated to 100 chars
         assert len(summary.split("\n")[2]) <= 120
+
+
+# --- S-03: Thread Reply (deep verification) ---
+
+class TestThreadReplyDeep:
+    """S-03: Thread reply — thread_ts propagation verified via chat_postMessage."""
+
+    def test_thread_mention_uses_parent_thread_ts(self, handler, mock_agent):
+        """Mention inside an existing thread replies to the parent thread, not the child message."""
+        parent_ts = "1700000000.000001"
+        child_ts = "1700000000.999999"
+
+        event = {
+            "channel": "C_TEST",
+            "user": "U_USER",
+            "text": "<@U_BOT_123> follow up question",
+            "ts": child_ts,
+            "thread_ts": parent_ts,  # Key: this is the parent thread
+        }
+        say = MagicMock()
+
+        handler.handle_mention(event, say)
+
+        # say() must use parent thread_ts, not the child message ts
+        say.assert_called_once_with(text="Hello! I'm Yui.", thread_ts=parent_ts)
+        assert say.call_args[1]["thread_ts"] == parent_ts
+        assert say.call_args[1]["thread_ts"] != child_ts
+
+    def test_top_level_mention_uses_own_ts_as_thread(self, handler, mock_agent):
+        """Top-level mention (no thread_ts) creates new thread from its own ts."""
+        message_ts = "1700000001.000001"
+
+        event = {
+            "channel": "C_TEST",
+            "user": "U_USER",
+            "text": "<@U_BOT_123> new question",
+            "ts": message_ts,
+            # No thread_ts — this is a top-level message
+        }
+        say = MagicMock()
+
+        handler.handle_mention(event, say)
+
+        # Should use message's own ts as thread_ts (start new thread)
+        say.assert_called_once_with(text="Hello! I'm Yui.", thread_ts=message_ts)
+
+    def test_thread_reply_session_id_uses_channel(self, handler, mock_session_manager):
+        """Thread reply uses channel-based session ID (not thread-based)."""
+        event = {
+            "channel": "C_THREAD_TEST",
+            "user": "U_THREAD_USER",
+            "text": "<@U_BOT_123> in thread",
+            "ts": "1700000002.999999",
+            "thread_ts": "1700000002.000001",
+        }
+        say = MagicMock()
+
+        handler.handle_mention(event, say)
+
+        # Session ID should be channel:user based
+        expected_sid = "slack:C_THREAD_TEST:U_THREAD_USER"
+        mock_session_manager.add_message.assert_any_call(expected_sid, "user", "<@U_BOT_123> in thread")
+
+    def test_multiple_thread_replies_maintain_thread(self, handler, mock_agent):
+        """Multiple mentions in same thread all reply to the same parent thread."""
+        parent_ts = "1700000003.000001"
+
+        for i in range(3):
+            event = {
+                "channel": "C_TEST",
+                "user": "U_USER",
+                "text": f"<@U_BOT_123> message {i}",
+                "ts": f"1700000003.{i:06d}",
+                "thread_ts": parent_ts,
+            }
+            say = MagicMock()
+            handler.handle_mention(event, say)
+
+            # Each reply should go to the same parent thread
+            say.assert_called_once()
+            assert say.call_args[1]["thread_ts"] == parent_ts
+
+
+# --- S-10: Agent Timeout ---
+
+class TestAgentTimeout:
+    """S-10: Agent processing timeout → error message, session intact."""
+
+    def test_agent_timeout_sends_error_message(self, mock_session_manager, mock_client):
+        """When agent raises TimeoutError, user receives an error message."""
+        agent = MagicMock(side_effect=TimeoutError("Agent processing timed out after 120s"))
+
+        handler = SlackHandler(
+            agent=agent,
+            session_manager=mock_session_manager,
+            slack_client=mock_client,
+            bot_user_id="U_BOT",
+        )
+
+        event = {"channel": "C_TEST", "user": "U_USER", "text": "test", "ts": "1.0"}
+        say = MagicMock()
+
+        handler.handle_mention(event, say)
+
+        # Error message should be sent to user
+        say.assert_called_once()
+        assert "Error" in say.call_args[1]["text"]
+        assert "timed out" in say.call_args[1]["text"]
+
+    def test_agent_timeout_preserves_user_message_in_session(self, mock_client):
+        """After timeout, the user message is still saved in session (not lost)."""
+        sm = MagicMock()
+        sm.get_message_count.return_value = 5
+        agent = MagicMock(side_effect=TimeoutError("timeout"))
+
+        handler = SlackHandler(
+            agent=agent,
+            session_manager=sm,
+            slack_client=mock_client,
+            bot_user_id="U_BOT",
+        )
+
+        event = {"channel": "C_TIMEOUT", "user": "U_TIMEOUT", "text": "my question", "ts": "1.0"}
+        say = MagicMock()
+
+        handler.handle_mention(event, say)
+
+        # User message should have been saved before agent call
+        sm.add_message.assert_called_with("slack:C_TIMEOUT:U_TIMEOUT", "user", "my question")
+
+    def test_agent_timeout_session_not_corrupted(self, mock_client):
+        """After timeout, subsequent requests still work normally."""
+        call_count = 0
+
+        def flaky_agent(text):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise TimeoutError("Agent processing timed out")
+            return "recovered response"
+
+        sm = MagicMock()
+        sm.get_message_count.return_value = 5
+
+        handler = SlackHandler(
+            agent=flaky_agent,
+            session_manager=sm,
+            slack_client=mock_client,
+            bot_user_id="U_BOT",
+        )
+
+        # First request: timeout
+        event1 = {"channel": "C_TEST", "user": "U_USER", "text": "first", "ts": "1.0"}
+        say1 = MagicMock()
+        handler.handle_mention(event1, say1)
+
+        assert "Error" in say1.call_args[1]["text"]
+
+        # Second request: should succeed (session not corrupted)
+        event2 = {"channel": "C_TEST", "user": "U_USER", "text": "second", "ts": "2.0"}
+        say2 = MagicMock()
+        handler.handle_mention(event2, say2)
+
+        say2.assert_called_once_with(text="recovered response", thread_ts="2.0")
+
+    def test_agent_timeout_lock_released(self, mock_client):
+        """After timeout, the agent lock is properly released."""
+        agent = MagicMock(side_effect=TimeoutError("timeout"))
+        sm = MagicMock()
+        sm.get_message_count.return_value = 5
+
+        handler = SlackHandler(
+            agent=agent,
+            session_manager=sm,
+            slack_client=mock_client,
+            bot_user_id="U_BOT",
+        )
+
+        event = {"channel": "C", "user": "U", "text": "test", "ts": "1.0"}
+        say = MagicMock()
+        handler.handle_mention(event, say)
+
+        # Lock should be released — can be acquired immediately
+        assert handler.agent_lock.acquire(timeout=0.1)
+        handler.agent_lock.release()
+
+    def test_dm_agent_timeout(self, mock_client):
+        """DM agent timeout also sends error message."""
+        agent = MagicMock(side_effect=TimeoutError("DM agent timed out"))
+        sm = MagicMock()
+        sm.get_message_count.return_value = 5
+
+        handler = SlackHandler(
+            agent=agent,
+            session_manager=sm,
+            slack_client=mock_client,
+            bot_user_id="U_BOT",
+        )
+
+        event = {"channel": "D_DM", "user": "U_USER", "text": "hello", "ts": "1.0"}
+        say = MagicMock()
+
+        handler.handle_dm(event, say)
+
+        say.assert_called_once()
+        assert "Error" in say.call_args[1]["text"]
+
+
+# --- S-12: 50-Message Compaction ---
+
+class TestFiftyMessageCompaction:
+    """S-12: Session compaction at 50+ messages with context preservation."""
+
+    def test_compaction_at_threshold_boundary(self, mock_agent, mock_client):
+        """Compaction triggers only when message count exceeds threshold."""
+        sm = MagicMock()
+
+        # Exactly at threshold — should NOT compact
+        sm.get_message_count.return_value = 50
+        handler = SlackHandler(
+            agent=mock_agent, session_manager=sm,
+            slack_client=mock_client, compaction_threshold=50, bot_user_id="U_BOT",
+        )
+        event = {"channel": "C", "user": "U", "text": "test", "ts": "1.0"}
+        say = MagicMock()
+        handler.handle_mention(event, say)
+        sm.compact_session.assert_not_called()
+
+        # Above threshold — should compact
+        sm.reset_mock()
+        sm.get_message_count.return_value = 51
+        handler.handle_mention(event, say)
+        sm.compact_session.assert_called_once()
+
+    def test_compaction_uses_summarize_function(self, mock_agent, mock_client):
+        """compact_session is called with _summarize_messages as summarizer."""
+        sm = MagicMock()
+        sm.get_message_count.return_value = 55
+
+        handler = SlackHandler(
+            agent=mock_agent, session_manager=sm,
+            slack_client=mock_client, compaction_threshold=50, bot_user_id="U_BOT",
+        )
+
+        event = {"channel": "C_COMP", "user": "U_COMP", "text": "test", "ts": "1.0"}
+        say = MagicMock()
+        handler.handle_mention(event, say)
+
+        # Verify compact_session called with session_id and summarizer function
+        sm.compact_session.assert_called_once()
+        call_args = sm.compact_session.call_args
+        assert call_args[0][0] == "slack:C_COMP:U_COMP"
+        assert call_args[0][1] is _summarize_messages
+
+    def test_custom_compaction_threshold(self, mock_agent, mock_client):
+        """Custom compaction_threshold is respected."""
+        sm = MagicMock()
+        sm.get_message_count.return_value = 25
+
+        # Lower threshold of 20
+        handler = SlackHandler(
+            agent=mock_agent, session_manager=sm,
+            slack_client=mock_client, compaction_threshold=20, bot_user_id="U_BOT",
+        )
+
+        event = {"channel": "C", "user": "U", "text": "test", "ts": "1.0"}
+        say = MagicMock()
+        handler.handle_mention(event, say)
+
+        # 25 > 20 → should compact
+        sm.compact_session.assert_called_once()
+
+    def test_high_threshold_prevents_compaction(self, mock_agent, mock_client):
+        """High threshold prevents compaction for moderate message counts."""
+        sm = MagicMock()
+        sm.get_message_count.return_value = 80
+
+        handler = SlackHandler(
+            agent=mock_agent, session_manager=sm,
+            slack_client=mock_client, compaction_threshold=100, bot_user_id="U_BOT",
+        )
+
+        event = {"channel": "C", "user": "U", "text": "test", "ts": "1.0"}
+        say = MagicMock()
+        handler.handle_mention(event, say)
+
+        # 80 ≤ 100 → should NOT compact
+        sm.compact_session.assert_not_called()
+
+    def test_compaction_preserves_context_integration(self, tmp_path):
+        """Integration: real SessionManager compaction preserves recent messages and summary."""
+        db_path = tmp_path / "test.db"
+        sm = SessionManager(str(db_path), compaction_threshold=10, keep_recent=3)
+
+        session_id = "slack:C_INT:U_INT"
+        sm.get_or_create_session(session_id, {"channel": "C_INT", "user": "U_INT"})
+
+        # Add 15 messages (above threshold of 10)
+        for i in range(15):
+            role = "user" if i % 2 == 0 else "assistant"
+            sm.add_message(session_id, role, f"Message {i}")
+
+        assert sm.get_message_count(session_id) == 15
+
+        # Compact
+        sm.compact_session(session_id, _summarize_messages)
+
+        # After compaction: 1 summary + 3 recent = 4 messages
+        messages = sm.get_messages(session_id)
+        assert len(messages) == 4
+
+        # First message is the summary
+        assert messages[0].role == "system"
+        assert "[Conversation summary]" in messages[0].content
+
+        # Last 3 messages are the recent ones (messages 12, 13, 14)
+        assert messages[1].content == "Message 12"
+        assert messages[2].content == "Message 13"
+        assert messages[3].content == "Message 14"
+
+    def test_compaction_summary_contains_old_messages(self, tmp_path):
+        """Integration: summary text contains content from compacted (old) messages."""
+        db_path = tmp_path / "test_summary.db"
+        sm = SessionManager(str(db_path), compaction_threshold=5, keep_recent=2)
+
+        session_id = "slack:C_SUM:U_SUM"
+        sm.get_or_create_session(session_id, {"channel": "C_SUM"})
+
+        # Add distinctive messages
+        sm.add_message(session_id, "user", "What is the capital of France?")
+        sm.add_message(session_id, "assistant", "The capital of France is Paris.")
+        sm.add_message(session_id, "user", "And what about Japan?")
+        sm.add_message(session_id, "assistant", "The capital of Japan is Tokyo.")
+        sm.add_message(session_id, "user", "Thanks!")
+        sm.add_message(session_id, "assistant", "You're welcome!")
+
+        sm.compact_session(session_id, _summarize_messages)
+
+        messages = sm.get_messages(session_id)
+        summary = messages[0].content
+
+        # Old messages should be in summary
+        assert "capital of France" in summary
+        assert "Paris" in summary
+        assert "Japan" in summary
+        assert "Tokyo" in summary
+
+        # Recent messages should NOT be in summary (they're kept separate)
+        recent_contents = [m.content for m in messages[1:]]
+        assert "Thanks!" in recent_contents
+        assert "You're welcome!" in recent_contents
+
+    def test_dm_compaction_also_works(self, mock_agent, mock_client):
+        """DM handler also triggers compaction above threshold."""
+        sm = MagicMock()
+        sm.get_message_count.return_value = 60
+
+        handler = SlackHandler(
+            agent=mock_agent, session_manager=sm,
+            slack_client=mock_client, compaction_threshold=50, bot_user_id="U_BOT",
+        )
+
+        event = {"channel": "D_DM", "user": "U_DM", "text": "dm message", "ts": "1.0"}
+        say = MagicMock()
+
+        handler.handle_dm(event, say)
+
+        sm.compact_session.assert_called_once()
+        assert sm.compact_session.call_args[0][0] == "slack:dm:U_DM"
 
 
 # --- SE-17: Socket Mode startup (smoke test) ---
