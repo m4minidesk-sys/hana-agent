@@ -85,9 +85,10 @@ def _register_phase2_tools(config: dict) -> list:
 
     # AgentCore tools (check boto3 available)
     try:
-        from yui.tools.agentcore import code_execute, memory_recall, memory_store, web_browse
+        from yui.tools.agentcore import code_execute, memory_recall, memory_store, set_region, web_browse
+        set_region(config["model"]["region"])
         tools.extend([web_browse, memory_store, memory_recall, code_execute])
-        logger.info("Registered AgentCore tools")
+        logger.info("Registered AgentCore tools (region: %s)", config["model"]["region"])
     except ImportError:
         logger.info("AgentCore tools not available — install boto3 to enable")
 

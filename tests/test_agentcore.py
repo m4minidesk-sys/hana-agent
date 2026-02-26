@@ -1,71 +1,147 @@
-"""Tests for AgentCore tools."""
+"""Tests for AgentCore tools — AC-17, AC-18, AC-18a."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch, PropertyMock
 
 import pytest
 
 from yui.tools.agentcore import code_execute, memory_recall, memory_store, web_browse
 
 
+# --- web_browse ---
+
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", True)
-def test_web_browse() -> None:
-    """Test web browse tool."""
-    result = web_browse("https://example.com", "extract content")
-    assert "AgentCore Browser" in result
-    assert "example.com" in result
+@patch("yui.tools.agentcore.browser_session")
+def test_web_browse(mock_session) -> None:
+    """AC-17: Web browse via AgentCore Browser."""
+    mock_browser = MagicMock()
+    mock_browser.start.return_value = "session-123"
+    mock_browser.invoke.side_effect = [
+        None,  # navigate
+        {"text": "Example content from page"},  # extract
+    ]
+    mock_session.return_value.__enter__ = MagicMock(return_value=mock_browser)
+    mock_session.return_value.__exit__ = MagicMock(return_value=False)
+
+    result = web_browse(url="https://example.com", task="extract content")
+    assert "Example content from page" in result
 
 
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", False)
 def test_web_browse_unavailable() -> None:
-    """Test web browse when AgentCore unavailable."""
-    result = web_browse("https://example.com")
+    """Web browse when SDK not installed."""
+    result = web_browse(url="https://example.com")
     assert "Error" in result
-    assert "not available" in result
+    assert "not installed" in result
 
 
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", True)
-def test_memory_store() -> None:
-    """Test memory store tool."""
-    result = memory_store("key1", "value1", "general")
-    assert "AgentCore Memory" in result
-    assert "key1" in result
+@patch("yui.tools.agentcore.browser_session")
+def test_web_browse_permission_denied(mock_session) -> None:
+    """Web browse with AccessDeniedException."""
+    mock_session.return_value.__enter__ = MagicMock(
+        side_effect=Exception("AccessDeniedException: User is not authorized")
+    )
+    mock_session.return_value.__exit__ = MagicMock(return_value=False)
+
+    result = web_browse(url="https://example.com")
+    assert "No permission" in result
+
+
+# --- memory_store ---
+
+@patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", True)
+@patch("yui.tools.agentcore._get_memory_client")
+def test_memory_store(mock_get_client) -> None:
+    """AC-18: Memory store via AgentCore Memory."""
+    mock_client = MagicMock()
+    mock_get_client.return_value = mock_client
+
+    result = memory_store(key="preference", value="dark mode", category="user")
+    assert "Stored" in result
+    assert "preference" in result
+    mock_client.add_memory.assert_called_once()
 
 
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", False)
 def test_memory_store_unavailable() -> None:
-    """Test memory store when AgentCore unavailable."""
-    result = memory_store("key1", "value1")
+    """Memory store when SDK not installed."""
+    result = memory_store(key="k", value="v")
     assert "Error" in result
-    assert "not available" in result
+    assert "not installed" in result
+
+
+# --- memory_recall ---
+
+@patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", True)
+@patch("yui.tools.agentcore._get_memory_client")
+def test_memory_recall(mock_get_client) -> None:
+    """AC-18: Memory recall via AgentCore Memory."""
+    mock_client = MagicMock()
+    mock_client.search_memory.return_value = [
+        {"content": "dark mode preference", "score": 0.95},
+    ]
+    mock_get_client.return_value = mock_client
+
+    result = memory_recall(query="user preference", limit=5)
+    assert "dark mode" in result
+    assert "1 memories" in result
 
 
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", True)
-def test_memory_recall() -> None:
-    """Test memory recall tool."""
-    result = memory_recall("test query", limit=5)
-    assert "AgentCore Memory" in result
-    assert "test query" in result
+@patch("yui.tools.agentcore._get_memory_client")
+def test_memory_recall_empty(mock_get_client) -> None:
+    """Memory recall with no results."""
+    mock_client = MagicMock()
+    mock_client.search_memory.return_value = []
+    mock_get_client.return_value = mock_client
+
+    result = memory_recall(query="nonexistent")
+    assert "No memories found" in result
 
 
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", False)
 def test_memory_recall_unavailable() -> None:
-    """Test memory recall when AgentCore unavailable."""
-    result = memory_recall("test query")
+    """Memory recall when SDK not installed."""
+    result = memory_recall(query="test")
     assert "Error" in result
-    assert "not available" in result
+    assert "not installed" in result
 
+
+# --- code_execute ---
 
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", True)
-def test_code_execute() -> None:
-    """Test code execute tool."""
-    result = code_execute("print('hello')", "python")
-    assert "AgentCore Code Interpreter" in result
-    assert "python" in result
+@patch("yui.tools.agentcore.code_session")
+def test_code_execute(mock_session) -> None:
+    """AC-18a: Code execution via AgentCore Code Interpreter."""
+    mock_interpreter = MagicMock()
+    mock_interpreter.start.return_value = "session-456"
+    mock_interpreter.execute_code.return_value = {
+        "stdout": "hello\n",
+        "stderr": "",
+    }
+    mock_session.return_value.__enter__ = MagicMock(return_value=mock_interpreter)
+    mock_session.return_value.__exit__ = MagicMock(return_value=False)
+
+    result = code_execute(code="print('hello')", language="python")
+    assert "hello" in result
 
 
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", False)
 def test_code_execute_unavailable() -> None:
-    """Test code execute when AgentCore unavailable."""
-    result = code_execute("print('hello')")
+    """Code execute when SDK not installed."""
+    result = code_execute(code="print('hello')")
     assert "Error" in result
-    assert "not available" in result
+    assert "not installed" in result
+
+
+@patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", True)
+@patch("yui.tools.agentcore.code_session")
+def test_code_execute_permission_denied(mock_session) -> None:
+    """Code execute with AccessDeniedException."""
+    mock_session.return_value.__enter__ = MagicMock(
+        side_effect=Exception("AccessDeniedException: No access")
+    )
+    mock_session.return_value.__exit__ = MagicMock(return_value=False)
+
+    result = code_execute(code="print('hello')")
+    assert "No permission" in result
