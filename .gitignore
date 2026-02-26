@@ -60,3 +60,6 @@ htmlcov/
 .coverage.*
 .mypy_cache/
 .ruff_cache/
+hello.py
+test.txt
+task*.py
