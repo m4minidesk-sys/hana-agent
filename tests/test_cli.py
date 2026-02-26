@@ -3,7 +3,6 @@
 import io
 import sys
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -11,30 +10,32 @@ import pytest
 class TestCLIStartup:
     """AC-01: python -m yui starts a CLI REPL that accepts user input."""
 
-    def test_repl_starts_and_exits_on_eof(self):
+    def test_repl_starts_and_exits_on_eof(self, monkeypatch):
         """REPL shows banner, accepts EOF (Ctrl+D) gracefully."""
         from yui.cli import main
 
         captured = io.StringIO()
-        with patch("sys.stdin", io.StringIO("")), \
-             patch("sys.stdout", captured), \
-             patch("sys.argv", ["yui"]):
-            main()
+        monkeypatch.setattr("sys.stdin", io.StringIO(""))
+        monkeypatch.setattr("sys.stdout", captured)
+        monkeypatch.setattr("sys.argv", ["yui"])
+        
+        main()
 
         output = captured.getvalue()
         assert "結（Yui）" in output
         assert "Goodbye" in output
 
-    def test_repl_skips_empty_input(self):
+    def test_repl_skips_empty_input(self, monkeypatch):
         """Empty lines are skipped, REPL continues."""
         from yui.cli import main
 
         # Three empty lines then EOF
         captured = io.StringIO()
-        with patch("sys.stdin", io.StringIO("\n\n\n")), \
-             patch("sys.stdout", captured), \
-             patch("sys.argv", ["yui"]):
-            main()
+        monkeypatch.setattr("sys.stdin", io.StringIO("\n\n\n"))
+        monkeypatch.setattr("sys.stdout", captured)
+        monkeypatch.setattr("sys.argv", ["yui"])
+        
+        main()
 
         output = captured.getvalue()
         assert "結（Yui）" in output

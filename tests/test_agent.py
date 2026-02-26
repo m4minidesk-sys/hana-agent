@@ -1,7 +1,6 @@
 """Tests for yui.agent — AC-02, AC-04, AC-05."""
 
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 import pytest
 
