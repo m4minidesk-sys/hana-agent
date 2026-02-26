@@ -24,7 +24,8 @@ def test_load_tokens_from_config() -> None:
             "app_token": "xapp-config",
         }
     }
-    with patch.dict(os.environ, {}, clear=True):
+    with patch.dict(os.environ, {}, clear=True), \
+         patch("yui.slack_adapter.load_dotenv"):
         bot_token, app_token = _load_tokens(config)
         assert bot_token == "xoxb-config"
         assert app_token == "xapp-config"
@@ -32,7 +33,8 @@ def test_load_tokens_from_config() -> None:
 
 def test_load_tokens_missing() -> None:
     """Test error when tokens are missing."""
-    with patch.dict(os.environ, {}, clear=True):
+    with patch.dict(os.environ, {}, clear=True), \
+         patch("yui.slack_adapter.load_dotenv"):
         with pytest.raises(ValueError, match="Missing Slack tokens"):
             _load_tokens({})
 
