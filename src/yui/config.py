@@ -94,6 +94,40 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "servers": [],
         "auto_connect": True,
     },
+    "workshop": {
+        "test": {
+            "region": "us-east-1",
+            "cleanup_after_test": True,
+            "timeout_per_step_seconds": 300,
+            "max_total_duration_minutes": 120,
+            "max_cost_usd": 10.0,
+            "headed": False,
+            "console_auth": {
+                "method": "iam_user",
+                "account_id": "",
+                "username": "",
+            },
+            "video": {
+                "enabled": True,
+                "resolution": {"width": 1920, "height": 1080},
+                "per_step": True,
+                "full_walkthrough": True,
+            },
+            "output_dir": "~/.yui/workshop-tests/",
+            "screenshot": {
+                "enabled": True,
+                "on_step_complete": True,
+                "on_failure": True,
+                "full_page": True,
+            },
+        },
+        "report": {
+            "format": "markdown",
+            "include_screenshots": True,
+            "include_video_links": True,
+            "slack_notify": True,
+        },
+    },
     "runtime": {
         "session": {
             "db_path": "~/.yui/sessions.db",
