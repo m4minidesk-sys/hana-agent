@@ -90,6 +90,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "open_minutes": "<cmd>+<shift>+m",
         },
     },
+    "mcp": {
+        "servers": [],
+        "auto_connect": True,
+    },
     "runtime": {
         "session": {
             "db_path": "~/.yui/sessions.db",

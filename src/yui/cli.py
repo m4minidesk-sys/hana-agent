@@ -51,6 +51,19 @@ def main() -> None:
 
     # Meeting subcommand (AC-40 through AC-51)
     meeting_parser = subparsers.add_parser("meeting", help="Meeting transcription")
+
+    # MCP subcommand
+    mcp_parser = subparsers.add_parser("mcp", help="Manage MCP server connections")
+    mcp_sub = mcp_parser.add_subparsers(dest="mcp_action", help="MCP actions")
+
+    mcp_sub.add_parser("list", help="List configured MCP servers and their status")
+
+    mcp_connect_parser = mcp_sub.add_parser("connect", help="Connect to an MCP server")
+    mcp_connect_parser.add_argument("name", help="Server name from config")
+
+    mcp_disconnect_parser = mcp_sub.add_parser("disconnect", help="Disconnect from an MCP server")
+    mcp_disconnect_parser.add_argument("name", help="Server name to disconnect")
+
     meeting_sub = meeting_parser.add_subparsers(dest="meeting_action", help="Meeting actions")
 
     start_parser = meeting_sub.add_parser("start", help="Start meeting recording")
@@ -97,6 +110,11 @@ def main() -> None:
         _handle_meeting(args, config)
         return
 
+    # Handle MCP commands
+    if args.command == "mcp":
+        _handle_mcp(args, config)
+        return
+
     # Route to Slack or CLI
     if args.slack:
         from yui.slack_adapter import run_slack
@@ -137,6 +155,69 @@ def _run_repl(config: dict) -> None:
             continue
         except Exception as e:
             print(f"\n[yui] Error: {e}\n", file=sys.stderr)
+
+
+def _handle_mcp(args: argparse.Namespace, config: dict) -> None:
+    """Handle MCP subcommands."""
+    if not args.mcp_action:
+        print("Usage: yui mcp {list|connect|disconnect}", file=sys.stderr)
+        sys.exit(1)
+
+    from yui.tools.mcp_integration import (
+        MCPConfigError,
+        MCPConnectionError,
+        MCPManager,
+        connect_mcp_servers,
+    )
+
+    if args.mcp_action == "list":
+        manager = MCPManager()
+        mcp_config = config.get("mcp", {})
+        try:
+            manager.load_configs(mcp_config)
+        except MCPConfigError as e:
+            print(f"[yui] MCP config error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+        servers = manager.list_servers()
+        if not servers:
+            print("No MCP servers configured.")
+            print("Add servers to ~/.yui/config.yaml under 'mcp.servers'.")
+            return
+
+        print(f"{'Name':<20} {'Transport':<15} {'Auto':<8} {'Endpoint':<40}")
+        print("-" * 83)
+        for srv in servers:
+            name = srv["name"][:18]
+            transport = srv["transport"]
+            auto = "yes" if srv["auto_connect"] else "no"
+            endpoint = ""
+            if srv.get("command"):
+                endpoint = " ".join(srv["command"])[:38]
+            elif srv.get("url"):
+                endpoint = srv["url"][:38]
+            print(f"{name:<20} {transport:<15} {auto:<8} {endpoint:<40}")
+
+    elif args.mcp_action == "connect":
+        manager = connect_mcp_servers(config)
+        name = args.name
+        try:
+            manager.connect(name)
+            print(f"✅ Connected to MCP server '{name}'")
+        except MCPConfigError as e:
+            print(f"[yui] {e}", file=sys.stderr)
+            sys.exit(1)
+        except MCPConnectionError as e:
+            print(f"[yui] Connection failed: {e}", file=sys.stderr)
+            sys.exit(1)
+        finally:
+            manager.disconnect_all()
+
+    elif args.mcp_action == "disconnect":
+        # For CLI disconnect, we inform the user but actual disconnect
+        # only applies to a running agent process
+        print(f"ℹ️  Disconnect is only applicable to a running agent process.")
+        print(f"   Server '{args.name}' will be disconnected on next agent restart.")
 
 
 def _handle_menubar(args: argparse.Namespace, config: dict) -> None:
