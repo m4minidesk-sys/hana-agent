@@ -8,3 +8,43 @@ presets:
     prompt: "Abstract logo design, interconnected nodes representing 'Yui' (to bind, to connect), dark purple #4A154B, clean geometric shapes, modern tech aesthetic, 512x512px"
     negative: "text, letters, words, realistic, photo, complex details"
     cfg_scale: 7.0
+  
+  light-lavender:
+    mode: variation
+    source_image: assets/icons/yui-slack-icon.png
+    similarity: 0.7
+    prompt: "Bright lavender background (#E6D5F5), maintain the B-2 knot motif design, soft and welcoming appearance, professional Slack icon"
+    negative: "dark background, black, gloomy, muddy colors"
+    cfg_scale: 8.0
+  
+  light-white:
+    mode: variation
+    source_image: assets/icons/yui-slack-icon.png
+    similarity: 0.7
+    prompt: "Soft white background (#F8F8FF), preserve the elegant knot design, clean and minimal aesthetic, bright professional icon"
+    negative: "dark, purple background, heavy shadows"
+    cfg_scale: 8.0
+  
+  light-gradient:
+    mode: variation
+    source_image: assets/icons/yui-slack-icon.png
+    similarity: 0.7
+    prompt: "White to light purple gradient background, keep the B-2 braided knot motif, smooth color transition, elegant Slack icon"
+    negative: "dark colors, solid background, harsh contrast"
+    cfg_scale: 8.0
+  
+  light-blue:
+    mode: variation
+    source_image: assets/icons/yui-slack-icon.png
+    similarity: 0.7
+    prompt: "Ice blue background (#E0F0FF), maintain the interconnected knot design, cool and professional tone, clean icon"
+    negative: "dark, warm colors, purple background"
+    cfg_scale: 8.0
+  
+  light-warm:
+    mode: variation
+    source_image: assets/icons/yui-slack-icon.png
+    similarity: 0.7
+    prompt: "Warm beige background (#F5F0E8), preserve the binding knot motif, soft and approachable feel, professional Slack icon"
+    negative: "dark, cold colors, purple background, high contrast"
+    cfg_scale: 8.0

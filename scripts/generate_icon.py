@@ -34,6 +34,9 @@ def generate_icons(
     quality: str = "premium",
     negative: Optional[str] = None,
     cfg_scale: float = 8.0,
+    mode: str = "generate",
+    source_image: Optional[str] = None,
+    similarity: float = 0.7,
 ) -> None:
     """Generate icons using Bedrock Nova Canvas API."""
     # Create output directory
@@ -42,23 +45,62 @@ def generate_icons(
     # Create Bedrock client
     client = boto3.client("bedrock-runtime", region_name="us-east-1")
     
-    # Prepare request body
-    body = {
-        "taskType": "TEXT_IMAGE",
-        "textToImageParams": {
-            "text": prompt,
-        },
-        "imageGenerationConfig": {
-            "numberOfImages": count,
-            "height": size,
-            "width": size,
-            "cfgScale": cfg_scale,
-            "quality": quality,
-        },
-    }
-    
-    if negative:
-        body["textToImageParams"]["negativeText"] = negative
+    # Prepare request body based on mode
+    if mode == "variation":
+        # Validate source image
+        if not source_image:
+            print("Error: --source-image is required for variation mode", file=sys.stderr)
+            sys.exit(2)
+        
+        source_path = Path(source_image)
+        if not source_path.exists():
+            print(f"Source image not found: {source_image}", file=sys.stderr)
+            sys.exit(1)
+        
+        if source_path.stat().st_size == 0:
+            print(f"Source image is empty: {source_image}", file=sys.stderr)
+            sys.exit(1)
+        
+        # Read and encode source image
+        with open(source_path, "rb") as f:
+            source_data = base64.b64encode(f.read()).decode("utf-8")
+        
+        body = {
+            "taskType": "IMAGE_VARIATION",
+            "imageVariationParams": {
+                "text": prompt,
+                "images": [source_data],
+                "similarityStrength": similarity,
+            },
+            "imageGenerationConfig": {
+                "numberOfImages": count,
+                "height": size,
+                "width": size,
+                "cfgScale": cfg_scale,
+                "quality": quality,
+            },
+        }
+        
+        if negative:
+            body["imageVariationParams"]["negativeText"] = negative
+    else:
+        # TEXT_IMAGE mode (default)
+        body = {
+            "taskType": "TEXT_IMAGE",
+            "textToImageParams": {
+                "text": prompt,
+            },
+            "imageGenerationConfig": {
+                "numberOfImages": count,
+                "height": size,
+                "width": size,
+                "cfgScale": cfg_scale,
+                "quality": quality,
+            },
+        }
+        
+        if negative:
+            body["textToImageParams"]["negativeText"] = negative
     
     if seed is not None:
         body["imageGenerationConfig"]["seed"] = seed
@@ -90,7 +132,10 @@ def generate_icons(
     try:
         for idx, img_base64 in enumerate(images):
             img_data = base64.b64decode(img_base64)
-            filename = f"yui-icon-{seed_value}-{idx}.png"
+            if mode == "variation":
+                filename = f"yui-variation-{seed_value}-{idx}.png"
+            else:
+                filename = f"yui-icon-{seed_value}-{idx}.png"
             filepath = Path(output_dir) / filename
             
             with open(filepath, "wb") as f:
@@ -164,8 +209,34 @@ def main():
         default=8.0,
         help="CFG scale for prompt adherence (default: 8.0)",
     )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default="generate",
+        choices=["generate", "variation"],
+        help="Generation mode: generate (TEXT_IMAGE) or variation (IMAGE_VARIATION, default: generate)",
+    )
+    parser.add_argument(
+        "--source-image",
+        type=str,
+        help="Source image path for variation mode (required when --mode variation)",
+    )
+    parser.add_argument(
+        "--similarity",
+        type=float,
+        default=0.7,
+        help="Similarity strength for variation mode (0.2-1.0, default: 0.7)",
+    )
     
     args = parser.parse_args()
+    
+    # Validate similarity range
+    if args.similarity < 0.2 or args.similarity > 1.0:
+        parser.error("--similarity must be between 0.2 and 1.0")
+    
+    # Validate mode and source-image combination
+    if args.mode == "variation" and not args.source_image:
+        parser.error("--source-image is required when --mode variation")
     
     # Manual validation for mutually exclusive arguments
     if args.prompt and args.preset:
@@ -196,10 +267,16 @@ def main():
         prompt = preset["prompt"]
         negative = preset.get("negative", args.negative)
         cfg_scale = preset.get("cfg_scale", args.cfg_scale)
+        mode = preset.get("mode", args.mode)
+        source_image = preset.get("source_image", args.source_image)
+        similarity = preset.get("similarity", args.similarity)
     else:
         prompt = args.prompt
         negative = args.negative
         cfg_scale = args.cfg_scale
+        mode = args.mode
+        source_image = args.source_image
+        similarity = args.similarity
     
     # Generate icons
     generate_icons(
@@ -211,6 +288,9 @@ def main():
         quality=args.quality,
         negative=negative,
         cfg_scale=cfg_scale,
+        mode=mode,
+        source_image=source_image,
+        similarity=similarity,
     )
 
 
