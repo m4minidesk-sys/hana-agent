@@ -3,7 +3,6 @@
 Uses mock Whisper engine — no real ML model needed.
 """
 
-from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
