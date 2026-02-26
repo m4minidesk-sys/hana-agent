@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TaskEvaluation",
+  "description": "Schema for task-level self-evaluation records (AC-73).",
+  "type": "object",
+  "required": ["task_id", "timestamp", "outcome"],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": ["success", "partial", "failure"]
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "kiro_review_rounds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "critical_findings": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "time_to_complete_minutes": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": true
+    },
+    "lessons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "improvements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["target", "suggestion"],
+        "properties": {
+          "target": {
+            "type": "string"
+          },
+          "suggestion": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
