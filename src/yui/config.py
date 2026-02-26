@@ -128,6 +128,20 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "slack_notify": True,
         },
     },
+    "autonomy": {
+        "level": 1,  # L1 = Assisted (default)
+        "per_task_overrides": {},
+        "budget": {
+            "max_monthly_bedrock_usd": 50.0,
+            "warning_threshold_pct": 80,
+            "hard_stop_threshold_pct": 100,
+        },
+        "self_improvement": {
+            "enabled": False,  # L4 only
+            "shadow_period_hours": 24,
+            "rollback_threshold_pct": 20,
+        },
+    },
     "runtime": {
         "session": {
             "db_path": "~/.yui/sessions.db",
