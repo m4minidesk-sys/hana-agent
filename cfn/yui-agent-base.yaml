@@ -1,0 +1,197 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Yui Agent — Base infrastructure stack.
+  Creates IAM user, Bedrock Guardrail, and outputs for local Mac deployment.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+    Description: Deployment environment
+
+  BedrockRegion:
+    Type: String
+    Default: us-east-1
+    Description: AWS region for Bedrock API
+
+  GuardrailName:
+    Type: String
+    Default: yui-guardrail
+    Description: Name for the Bedrock Guardrail
+
+  ContentFilterStrength:
+    Type: String
+    Default: HIGH
+    AllowedValues: [NONE, LOW, MEDIUM, HIGH]
+    Description: Default strength for content filters
+
+Resources:
+  # --- IAM ---
+
+  YuiPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub yui-agent-${Environment}-policy
+      Description: Minimum permissions for Yui Agent local deployment
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # Bedrock Converse API
+          - Sid: BedrockInvoke
+            Effect: Allow
+            Action:
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithResponseStream
+            Resource:
+              - !Sub arn:aws:bedrock:${BedrockRegion}::foundation-model/*
+              - !Sub arn:aws:bedrock:${BedrockRegion}:${AWS::AccountId}:inference-profile/*
+
+          # Bedrock Guardrails
+          - Sid: BedrockGuardrails
+            Effect: Allow
+            Action:
+              - bedrock:ApplyGuardrail
+              - bedrock:GetGuardrail
+            Resource:
+              - !Sub arn:aws:bedrock:${BedrockRegion}:${AWS::AccountId}:guardrail/*
+
+          # AgentCore Browser
+          - Sid: AgentCoreBrowser
+            Effect: Allow
+            Action:
+              - bedrock-agentcore:CreateBrowserSession
+              - bedrock-agentcore:InvokeBrowserSession
+              - bedrock-agentcore:DeleteBrowserSession
+              - bedrock-agentcore:ListBrowserSessions
+            Resource: "*"
+
+          # AgentCore Memory
+          - Sid: AgentCoreMemory
+            Effect: Allow
+            Action:
+              - bedrock-agentcore:CreateMemory
+              - bedrock-agentcore:GetMemory
+              - bedrock-agentcore:SearchMemory
+              - bedrock-agentcore:DeleteMemory
+              - bedrock-agentcore:ListMemories
+            Resource: "*"
+
+          # AgentCore Code Interpreter
+          - Sid: AgentCoreCodeInterpreter
+            Effect: Allow
+            Action:
+              - bedrock-agentcore:CreateCodeInterpreterSession
+              - bedrock-agentcore:InvokeCodeInterpreterSession
+              - bedrock-agentcore:DeleteCodeInterpreterSession
+              - bedrock-agentcore:ListCodeInterpreterSessions
+            Resource: "*"
+
+  YuiUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Sub yui-agent-${Environment}
+      ManagedPolicyArns:
+        - !Ref YuiPolicy
+      Tags:
+        - Key: Project
+          Value: yui-agent
+        - Key: Environment
+          Value: !Ref Environment
+
+  YuiAccessKey:
+    Type: AWS::IAM::AccessKey
+    Properties:
+      UserName: !Ref YuiUser
+
+  # --- Bedrock Guardrail ---
+
+  YuiGuardrail:
+    Type: AWS::Bedrock::Guardrail
+    Properties:
+      Name: !Sub ${GuardrailName}-${Environment}
+      Description: !Sub Yui Agent content safety guardrail (${Environment})
+      BlockedInputMessaging: >-
+        I can't process that request — it was blocked by our safety policy.
+        Please rephrase your question.
+      BlockedOutputsMessaging: >-
+        I generated a response that was blocked by our safety policy.
+        Let me try a different approach.
+      ContentPolicyConfig:
+        FiltersConfig:
+          - Type: SEXUAL
+            InputStrength: !Ref ContentFilterStrength
+            OutputStrength: !Ref ContentFilterStrength
+          - Type: HATE
+            InputStrength: !Ref ContentFilterStrength
+            OutputStrength: !Ref ContentFilterStrength
+          - Type: VIOLENCE
+            InputStrength: MEDIUM
+            OutputStrength: MEDIUM
+          - Type: INSULTS
+            InputStrength: MEDIUM
+            OutputStrength: MEDIUM
+          - Type: MISCONDUCT
+            InputStrength: !Ref ContentFilterStrength
+            OutputStrength: !Ref ContentFilterStrength
+          - Type: PROMPT_ATTACK
+            InputStrength: !Ref ContentFilterStrength
+            OutputStrength: NONE
+      Tags:
+        - Key: Project
+          Value: yui-agent
+        - Key: Environment
+          Value: !Ref Environment
+
+  # --- Secrets Manager (Slack tokens) ---
+
+  YuiSlackSecrets:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub yui-agent/${Environment}/slack
+      Description: Slack Bot Token and App Token for Yui
+      SecretString: '{"bot_token":"xoxb-PLACEHOLDER","app_token":"xapp-PLACEHOLDER"}'
+      Tags:
+        - Key: Project
+          Value: yui-agent
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  YuiUserArn:
+    Description: IAM User ARN for Yui Agent
+    Value: !GetAtt YuiUser.Arn
+    Export:
+      Name: !Sub yui-agent-${Environment}-user-arn
+
+  YuiAccessKeyId:
+    Description: Access Key ID (store securely!)
+    Value: !Ref YuiAccessKey
+
+  YuiSecretAccessKey:
+    Description: Secret Access Key (store securely! Visible only at creation)
+    Value: !GetAtt YuiAccessKey.SecretAccessKey
+
+  GuardrailId:
+    Description: Bedrock Guardrail ID
+    Value: !GetAtt YuiGuardrail.GuardrailId
+    Export:
+      Name: !Sub yui-agent-${Environment}-guardrail-id
+
+  GuardrailVersion:
+    Description: Bedrock Guardrail Version
+    Value: !GetAtt YuiGuardrail.Version
+    Export:
+      Name: !Sub yui-agent-${Environment}-guardrail-version
+
+  SlackSecretsArn:
+    Description: Secrets Manager ARN for Slack tokens
+    Value: !Ref YuiSlackSecrets
+    Export:
+      Name: !Sub yui-agent-${Environment}-slack-secrets-arn
+
+  PolicyArn:
+    Description: IAM Policy ARN
+    Value: !Ref YuiPolicy
+    Export:
+      Name: !Sub yui-agent-${Environment}-policy-arn
