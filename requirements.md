@@ -1412,46 +1412,84 @@ all = ["yui-agent[meeting,ui,hotkey]"]
 
 ### 10.6.1 Overview
 
-Yui provides automated workshop testing: given a workshop's content (Markdown, HTML, or Workshop Studio URL), Yui walks through each step, executes it in a real AWS account, validates the results, and produces a test report. This enables workshop authors to verify their content works end-to-end before publishing, and supports regression testing when AWS services change.
+Yui provides automated workshop testing: given a Workshop Studio URL, Yui scrapes the workshop content via browser automation, walks through each step by operating the AWS Console (Playwright), records the entire session as video, validates results with Bedrock Vision, and produces a test report with video recordings and screenshots. This enables workshop authors to verify their content works end-to-end before publishing, and supports regression testing when AWS services change.
+
+**Key design decisions (confirmed by han 2026-02-26):**
+- Primary content source is Workshop Studio (catalog.workshops.aws); GitHub support planned for future
+- Environment provisioning is done via Console operations by Yui (not CLI/CFn)
+- Console operations must be verified via browser automation (Playwright)
+- Target workshops are not genre-limited; Cloud-based workshops that complete entirely in Console
 
 ### 10.6.2 Workflow
 
 ```
-Workshop Content (MD/HTML/URL)
-  ↓ Content Parser
-Structured Steps (JSON)
+Workshop Studio URL (catalog.workshops.aws)
+  ↓ Content Scraper (Playwright — SPA requires browser)
+Page content (all modules/steps)
   ↓ Step Planner (Bedrock LLM)
-Executable Actions
-  ↓ Executor (CLI / CFn / HTTP / Browser)
+Structured executable steps (JSON)
+  ↓ Console Executor (Playwright + Bedrock Vision)
+  ↓ + Video Recorder (Playwright record_video)
+  ↓ + Screenshot Capture (per step + on failure)
 Step Results (PASS / FAIL / SKIP / TIMEOUT)
   ↓ Reporter
-Test Report (Markdown) + Slack Notification
-  ↓ Cleanup
-AWS Resources Deleted
+Test Report (Markdown + video links + screenshots)
+  ↓ Slack Notification
+  ↓ Cleanup (tag-based resource deletion)
 ```
 
 ### 10.6.3 Step Types
 
-| Type | Description | Executor |
-|---|---|---|
-| `cfn_deploy` | CloudFormation stack create/update/delete | boto3 CloudFormation |
-| `cli_command` | AWS CLI or shell command execution | subprocess (safe_shell) |
-| `cli_check` | CLI output validation against expected result | subprocess + Bedrock LLM |
-| `http_test` | HTTP endpoint test (status code, body match) | requests / curl |
-| `console_navigate` | AWS Console UI interaction | AgentCore Browser |
-| `console_verify` | Console UI state verification | AgentCore Browser + Bedrock LLM |
-| `code_run` | Code execution (Python/Node/etc.) | subprocess or AgentCore CodeInterpreter |
-| `code_deploy` | SAM / CDK / Serverless Framework deploy | subprocess |
-| `manual_step` | Manual operation — LLM decides: skip or find alternative | — |
-| `wait` | Wait for resource readiness | polling with timeout |
+| Type | Description | Executor | Video |
+|---|---|---|---|
+| `console_navigate` | AWS Console page navigation | Playwright | ✅ |
+| `console_action` | Console CRUD operations (click, fill, select) | Playwright + Bedrock Vision | ✅ |
+| `console_verify` | Console screen state validation | Playwright screenshot + Bedrock Vision | ✅ |
+| `cli_command` | AWS CLI / shell command (when workshop has CLI steps) | subprocess (safe_shell) | ❌ |
+| `cli_check` | CLI output validation | subprocess + Bedrock LLM | ❌ |
+| `cfn_deploy` | CloudFormation stack ops (if in workshop) | boto3 | ❌ |
+| `http_test` | HTTP endpoint test | requests | ❌ |
+| `code_run` | Code execution (if in workshop) | subprocess | ❌ |
+| `wait` | Resource readiness polling | timeout loop | ❌ |
+| `manual_step` | Manual op — LLM skip or find alternative | — | — |
+
+**Console operations are primary.** Most workshop steps are Console UI operations.
 
 ### 10.6.4 Content Sources
 
-- **Workshop Studio URL** (`catalog.workshops.aws/...`) → Browser scraping
-- **GitHub repository** → `git clone` or GitHub API
-- **Local path** → Direct file read (Markdown/HTML)
+- **Workshop Studio URL** (`catalog.workshops.aws/...`) → Playwright browser scraping (SPA, web_fetch won't work)
+- **GitHub repository** (future) → `git clone` or GitHub API
 
-### 10.6.5 Test Report
+### 10.6.5 Console Authentication
+
+Workshop testing requires AWS Console login. Supported methods:
+
+| Method | Description | Config key |
+|---|---|---|
+| `iam_user` | IAM user + password Console login | `console_auth.method: iam_user` |
+| `federation` | STS GetFederationToken → Console URL (temp credentials) | `console_auth.method: federation` |
+| `sso` | IAM Identity Center SSO portal | `console_auth.method: sso` |
+
+### 10.6.6 Video Recording
+
+Playwright built-in video recording captures the entire Console operation:
+
+- **Format**: WebM (VP8)
+- **Resolution**: Configurable (default: 1920×1080)
+- **Per-step videos**: Each step recorded as separate video file
+- **Full walkthrough**: Continuous video of entire test run
+- **Works in headless mode**: No display required
+- **Output**: `~/.yui/workshop-tests/{test-id}/videos/`
+
+### 10.6.7 Vision Validation
+
+Each step result is validated using Bedrock Claude Vision:
+- Screenshot captured after step execution
+- Image sent to Bedrock with expected result description
+- LLM responds PASS/FAIL/UNCLEAR with explanation
+- Failed steps include screenshot + failure reason in report
+
+### 10.6.8 Test Report
 
 ```markdown
 # Workshop Test Report — {date}
@@ -1462,22 +1500,26 @@ AWS Resources Deleted
 - Passed: X ✅ | Failed: Y ❌ | Skipped: Z ⏭
 - Duration: Xm Ys
 - AWS Cost (estimated): $X.XX
-### Failed Steps
-| # | Step | Error |
-|---|---|---|
-### Recommendations
-(LLM-generated fix suggestions for each failure)
+### Video Recordings
+- 📹 Full walkthrough: videos/full-walkthrough.webm
+- 📹 Module 1: videos/module-1.webm
+### Step Results
+| # | Module | Step | Result | Screenshot | Video Timestamp |
+|---|---|---|---|---|---|
+### Failed Steps Detail
+(screenshot + explanation + LLM-generated fix suggestions)
+### AWS Resources Created (for cleanup)
 ```
 
-### 10.6.6 Safety Controls
+### 10.6.9 Safety Controls
 
-- **Cost guard**: Configurable max cost per test run (default: $5). Test aborts if projected cost exceeds limit.
-- **Timeout**: Per-step timeout (default: 300s) and total test timeout (default: 60min).
-- **Cleanup**: `--cleanup` flag auto-deletes all created CloudFormation stacks after test.
-- **Account isolation**: Test in a dedicated AWS account (recommended: Workshop Studio Event provisioning or separate test account).
-- **Command allowlist**: Same safe_shell restrictions apply to workshop CLI commands.
+- **Cost guard**: Configurable max cost per test run (default: $10). Test aborts if projected cost exceeds limit.
+- **Timeout**: Per-step timeout (default: 300s) and total test timeout (default: 120min).
+- **Cleanup**: `--cleanup` auto-deletes all test-created resources via tag-based tracking (`yui:workshop-test={test-id}`).
+- **Account isolation**: Test in dedicated AWS account recommended.
+- **Command allowlist**: safe_shell restrictions apply to any CLI steps.
 
-### 10.6.7 Config
+### 10.6.10 Config
 
 ```yaml
 workshop:
@@ -1485,42 +1527,65 @@ workshop:
     region: us-east-1
     cleanup_after_test: true
     timeout_per_step_seconds: 300
-    max_total_duration_minutes: 60
-    max_cost_usd: 5.0
-    browser_enabled: true
+    max_total_duration_minutes: 120
+    max_cost_usd: 10.0
+    headed: false  # true=visible browser, false=headless
+    console_auth:
+      method: iam_user  # iam_user | federation | sso
+      account_id: ""
+      username: ""
+      # password from .env: YUI_CONSOLE_PASSWORD
+    video:
+      enabled: true
+      resolution: {width: 1920, height: 1080}
+      per_step: true
+      full_walkthrough: true
+      output_dir: ~/.yui/workshop-tests/
+    screenshot:
+      enabled: true
+      on_step_complete: true
+      on_failure: true
+      full_page: true
   report:
     format: markdown
+    include_screenshots: true
+    include_video_links: true
     slack_notify: true
     save_path: ~/.yui/workshop-tests/
 ```
 
-### 10.6.8 CLI
+### 10.6.11 CLI
 
 ```bash
-yui workshop test <url-or-path>              # Run workshop test
-yui workshop test <url> --cleanup            # Test + auto-cleanup
-yui workshop test <url> --dry-run            # Parse only, no execution
-yui workshop test <url> --steps 1-5          # Test specific steps
-yui workshop list-tests                       # List past test runs
-yui workshop show-report <test-id>           # Show specific report
+yui workshop test <url>                    # Run workshop test
+yui workshop test <url> --record           # Test + video recording (default: on)
+yui workshop test <url> --cleanup          # Test + auto-cleanup resources
+yui workshop test <url> --headed           # Show browser window
+yui workshop test <url> --dry-run          # Parse only, no execution
+yui workshop test <url> --steps 1-5        # Test specific steps
+yui workshop list-tests                     # List past test runs
+yui workshop show-report <test-id>         # Show specific report
 ```
 
-### 10.6.9 Acceptance Criteria
+### 10.6.12 Acceptance Criteria
 
-- [ ] AC-70: Workshop content parsed from Markdown/HTML into structured steps
-- [ ] AC-71: Bedrock LLM converts steps into executable actions
-- [ ] AC-72: AWS CLI commands executed and output captured
-- [ ] AC-73: CloudFormation stacks created/deleted automatically
-- [ ] AC-74: HTTP endpoints tested with status/body validation
-- [ ] AC-75: Bedrock LLM validates step results as PASS/FAIL/SKIP
-- [ ] AC-76: Structured test report generated in Markdown
-- [ ] AC-77: Slack notification with test summary
-- [ ] AC-78: `--cleanup` deletes all test-created AWS resources
-- [ ] AC-79: Cost guard aborts test when projected cost exceeds limit
-- [ ] AC-80: `yui workshop test <url>` CLI command works
-- [ ] AC-81: Per-step and total timeout enforced
-- [ ] AC-82: Console verification via AgentCore Browser (optional)
-- [ ] AC-83: Regression mode for periodic automated testing
+- [ ] AC-70: Workshop Studio content scraped via Playwright (SPA navigation)
+- [ ] AC-71: Bedrock LLM converts scraped content into structured executable steps
+- [ ] AC-72: AWS Console login automated via Playwright (IAM user / federation / SSO)
+- [ ] AC-73: Console page navigation automated (service switching, region selection)
+- [ ] AC-74: Console CRUD operations executed (resource create/update/delete via UI)
+- [ ] AC-75: Bedrock Vision validates step results from screenshots (PASS/FAIL/SKIP)
+- [ ] AC-76: Playwright video records all Console operations (per-step + full walkthrough)
+- [ ] AC-77: Screenshots captured at step completion and on failure
+- [ ] AC-78: Structured test report with video links and screenshots generated
+- [ ] AC-79: Slack notification with test summary posted
+- [ ] AC-80: Tag-based resource cleanup (`yui:workshop-test` tag)
+- [ ] AC-81: Cost guard aborts test when projected cost exceeds configured limit
+- [ ] AC-82: `yui workshop test <url>` CLI with `--record`, `--cleanup`, `--headed`, `--dry-run`
+- [ ] AC-83: Per-step and total timeout enforced
+- [ ] AC-84: CLI command fallback for workshop steps that include CLI instructions
+- [ ] AC-85: Regression mode for periodic automated testing (cron)
+- [ ] AC-86: (Future) GitHub repository content source support
 
 ---
 
