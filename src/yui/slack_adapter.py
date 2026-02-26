@@ -84,7 +84,8 @@ def run_slack(config: Optional[dict] = None) -> None:
             session_manager.add_message(session_id, "user", text)
 
             # Get response
-            response = agent(text)
+            result = agent(text)
+            response = str(result)
 
             # Add assistant message
             session_manager.add_message(session_id, "assistant", response)
@@ -126,7 +127,8 @@ def run_slack(config: Optional[dict] = None) -> None:
             session_manager.add_message(session_id, "user", text)
 
             # Get response
-            response = agent(text)
+            result = agent(text)
+            response = str(result)
 
             # Add assistant message
             session_manager.add_message(session_id, "assistant", response)
