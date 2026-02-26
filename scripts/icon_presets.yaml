@@ -1,0 +1,10 @@
+presets:
+  elegant-secretary:
+    prompt: "Professional AI assistant avatar, elegant secretary character, purple theme #4A154B, minimalist design, friendly and intelligent appearance, suitable for Slack profile icon, 512x512px"
+    negative: "photo, realistic, human face, text, watermark, blurry"
+    cfg_scale: 8.0
+  
+  minimal-logo:
+    prompt: "Abstract logo design, interconnected nodes representing 'Yui' (to bind, to connect), dark purple #4A154B, clean geometric shapes, modern tech aesthetic, 512x512px"
+    negative: "text, letters, words, realistic, photo, complex details"
+    cfg_scale: 7.0
