@@ -6,6 +6,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from yui.workshop.models import TestRun
 
+pytestmark = pytest.mark.component
+
+
 
 def _make_test_run():
     return TestRun(test_id="wt-abc12345", workshop_url="https://catalog.workshops.aws/example",

@@ -5,6 +5,9 @@ import pytest
 from botocore.exceptions import ClientError
 from yui.workshop.resource_manager import ResourceManager, TAG_KEY, _parse_arn_service
 
+pytestmark = pytest.mark.component
+
+
 
 def _client_error(code="AccessDenied", message="Denied"):
     return ClientError({"Error": {"Code": code, "Message": message}}, "TestOp")

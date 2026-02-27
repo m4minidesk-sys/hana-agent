@@ -7,6 +7,9 @@ import pytest
 
 from yui.tools.git_tool import git_tool
 
+pytestmark = pytest.mark.component
+
+
 
 @patch("yui.tools.git_tool.subprocess.run")
 def test_git_tool_allowed_subcommand(mock_run: MagicMock) -> None:

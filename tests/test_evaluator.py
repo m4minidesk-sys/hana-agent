@@ -12,6 +12,9 @@ import yaml
 
 from yui.autonomy.evaluator import TaskEvaluation, TaskEvaluator
 
+pytestmark = pytest.mark.component
+
+
 
 @pytest.fixture()
 def memory_dir(tmp_path: Path) -> Path:

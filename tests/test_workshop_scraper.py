@@ -14,6 +14,9 @@ from yui.workshop.scraper import (
     validate_workshop_url,
 )
 
+pytestmark = pytest.mark.component
+
+
 
 # =========================================================================
 # URL helpers

@@ -8,6 +8,9 @@ from unittest.mock import MagicMock, Mock, patch, call
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
+
 
 # Mock pynput before importing hotkeys
 @pytest.fixture(autouse=True)

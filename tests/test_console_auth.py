@@ -12,6 +12,9 @@ from yui.workshop.console_auth import (
     ConsoleAuthMethod, IAM_LOGIN_URL_TEMPLATE,
 )
 
+pytestmark = pytest.mark.component
+
+
 
 @pytest.fixture
 def authenticator():

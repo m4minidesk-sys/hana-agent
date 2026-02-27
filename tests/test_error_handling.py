@@ -11,6 +11,9 @@ import pytest
 from yui.config import ConfigError, load_config
 from yui.tools.safe_shell import create_safe_shell
 
+pytestmark = pytest.mark.component
+
+
 
 class TestAWSCredentialErrors:
     """AC-26: Missing AWS credentials."""

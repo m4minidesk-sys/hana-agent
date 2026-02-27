@@ -7,6 +7,9 @@ import pytest
 
 from yui.session import Message, SessionManager
 
+pytestmark = pytest.mark.unit
+
+
 
 @pytest.fixture
 def session_manager() -> SessionManager:

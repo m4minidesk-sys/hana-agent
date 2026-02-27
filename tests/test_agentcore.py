@@ -6,6 +6,9 @@ import pytest
 
 from yui.tools.agentcore import code_execute, memory_recall, memory_store, web_browse
 
+pytestmark = pytest.mark.component
+
+
 
 # --- web_browse ---
 

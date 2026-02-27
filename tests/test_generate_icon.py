@@ -7,6 +7,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytestmark = pytest.mark.component
+
+
 
 # AC1: 画像生成スクリプト
 

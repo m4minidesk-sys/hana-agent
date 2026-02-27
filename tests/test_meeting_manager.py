@@ -18,6 +18,9 @@ from yui.meeting.manager import (
 )
 from yui.meeting.models import MeetingStatus, TranscriptChunk
 
+pytestmark = pytest.mark.component
+
+
 
 class MockRecorder:
     """Mock AudioRecorder for testing."""

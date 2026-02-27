@@ -7,6 +7,9 @@ from botocore.exceptions import ClientError
 
 from yui.tools.agentcore import kb_retrieve, web_search
 
+pytestmark = pytest.mark.component
+
+
 
 # --- kb_retrieve tests (Issue #48) ---
 

@@ -16,6 +16,9 @@ from yui.workshop.planner import (
     validate_steps,
 )
 
+pytestmark = pytest.mark.component
+
+
 
 # =========================================================================
 # Fixtures
