@@ -100,4 +100,5 @@ markers = [
     "integration: Integration tests - test real external service interactions",
     "e2e: End-to-end tests - test complete user workflows",
     "security: Security tests - test injection, traversal, and attack scenarios",
+    "no_autospec: Disable autospec enforcement for this test",
 ]
