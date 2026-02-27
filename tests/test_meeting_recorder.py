@@ -13,6 +13,9 @@ import pytest
 
 from yui.meeting.recorder import AudioRecorder
 
+pytestmark = pytest.mark.component
+
+
 
 class MockAudioStream:
     """Mock audio stream for testing — generates fake audio data."""

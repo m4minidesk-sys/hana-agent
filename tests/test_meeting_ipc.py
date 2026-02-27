@@ -23,6 +23,9 @@ from yui.meeting.ipc import (
     IPCServer,
 )
 
+pytestmark = pytest.mark.component
+
+
 
 @pytest.fixture
 def sock_path():

@@ -10,6 +10,9 @@ import pytest
 
 from yui.meeting.transcriber import WhisperTranscriber
 
+pytestmark = pytest.mark.component
+
+
 
 class MockWhisperEngine:
     """Mock Whisper engine for testing."""

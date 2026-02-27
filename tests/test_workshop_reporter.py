@@ -8,6 +8,9 @@ from yui.workshop.models import (
 )
 from yui.workshop.reporter import WorkshopReporter, _count_by_result, _fmt_duration
 
+pytestmark = pytest.mark.component
+
+
 
 def _make_step(step_id="1.0.1", title="Navigate to S3", step_type=StepType.CONSOLE_NAVIGATE,
                description="Open the S3 console", action=None, expected_result="S3 console opens",

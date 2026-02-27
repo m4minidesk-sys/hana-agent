@@ -23,6 +23,9 @@ from yui.meeting.minutes import (
 )
 from yui.meeting.models import MeetingStatus, TranscriptChunk
 
+pytestmark = pytest.mark.component
+
+
 
 def make_config(tmp_path=None):
     """Create a test config dict."""

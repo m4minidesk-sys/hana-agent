@@ -7,6 +7,9 @@ import pytest
 
 from yui.tools.kiro_delegate import kiro_delegate
 
+pytestmark = pytest.mark.component
+
+
 
 @patch("yui.tools.kiro_delegate.Path")
 @patch("yui.tools.kiro_delegate.subprocess.run")

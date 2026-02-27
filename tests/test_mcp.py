@@ -18,6 +18,9 @@ from yui.tools.mcp_integration import (
     connect_mcp_servers,
 )
 
+pytestmark = pytest.mark.component
+
+
 
 # ─── MCPServerConfig validation tests ──────────────────────────────────
 

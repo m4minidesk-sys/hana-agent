@@ -9,6 +9,9 @@ from unittest.mock import MagicMock, Mock, patch, call
 
 import pytest
 
+pytestmark = pytest.mark.component
+
+
 
 # Mock rumps before importing menubar
 @pytest.fixture(autouse=True)

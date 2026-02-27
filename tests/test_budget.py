@@ -14,6 +14,9 @@ from yui.autonomy.budget import (
     UsageRecord,
 )
 
+pytestmark = pytest.mark.unit
+
+
 
 # --------------------------------------------------------------------------
 # Fixtures

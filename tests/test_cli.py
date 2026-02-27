@@ -7,6 +7,9 @@ from unittest.mock import patch
 
 import pytest
 
+pytestmark = pytest.mark.component
+
+
 
 class TestCLIStartup:
     """AC-01: python -m yui starts a CLI REPL that accepts user input."""

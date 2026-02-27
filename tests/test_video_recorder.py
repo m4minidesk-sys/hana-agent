@@ -9,6 +9,9 @@ import pytest
 
 from yui.workshop.video_recorder import DEFAULT_RESOLUTION, RecordingConfig, VideoRecorder
 
+pytestmark = pytest.mark.component
+
+
 
 @pytest.fixture
 def tmp_output_dir(tmp_path):

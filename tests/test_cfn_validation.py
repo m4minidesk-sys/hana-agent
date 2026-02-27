@@ -16,6 +16,9 @@ import yaml
 from pathlib import Path
 import boto3
 
+pytestmark = pytest.mark.integration
+
+
 
 # CFn専用YAMLローダー（CFnタグを処理）
 class CFnYAMLLoader(yaml.SafeLoader):

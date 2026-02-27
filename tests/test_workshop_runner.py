@@ -10,6 +10,9 @@ from yui.workshop.runner import (
     WorkshopCostLimitError, WorkshopTestRunner, WorkshopTimeoutError, _parse_step_range,
 )
 
+pytestmark = pytest.mark.component
+
+
 
 def _make_config(**overrides):
     cfg = {

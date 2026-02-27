@@ -17,6 +17,9 @@ from yui.autonomy.improver import (
     SelfImprover,
 )
 
+pytestmark = pytest.mark.component
+
+
 
 # --------------------------------------------------------------------------
 # Fixtures

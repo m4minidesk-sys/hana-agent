@@ -22,6 +22,9 @@ from unittest import mock
 import pytest
 import yaml
 
+pytestmark = pytest.mark.unit
+
+
 # ─── LOCAL integration tests (no external deps) ───
 
 

@@ -20,6 +20,9 @@ from yui.tools.kiro_tools import (
     kiro_review,
 )
 
+pytestmark = pytest.mark.component
+
+
 
 # --- Utility tests ---
 
