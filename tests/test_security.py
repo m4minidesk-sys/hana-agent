@@ -9,6 +9,9 @@ from unittest.mock import patch, MagicMock
 
 from yui.tools.safe_shell import create_safe_shell
 
+pytestmark = pytest.mark.component
+
+
 
 # --- Fixtures ---
 

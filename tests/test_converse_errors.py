@@ -10,6 +10,9 @@ from botocore.exceptions import ClientError, ReadTimeoutError
 from yui.agent import create_agent, BedrockErrorHandler
 from yui.config import load_config
 
+pytestmark = pytest.mark.component
+
+
 
 class TestConverseAPIThrottling:
     """ThrottlingException → retry + exponential backoff tests."""

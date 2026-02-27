@@ -8,6 +8,9 @@ import pytest
 from yui.config import load_config
 from yui.agent import create_agent, _load_system_prompt
 
+pytestmark = pytest.mark.component
+
+
 
 class TestSystemPrompt:
     """AC-05: System prompt includes content from AGENTS.md and SOUL.md."""

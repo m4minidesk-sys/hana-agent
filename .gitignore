@@ -64,3 +64,4 @@ hello.py
 test.txt
 task*.py
 .kiro/
+.hypothesis/

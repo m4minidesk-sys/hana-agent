@@ -379,6 +379,9 @@ import json
 import datetime
 import math
 
+pytestmark = pytest.mark.e2e
+
+
 data = {'test': True, 'timestamp': str(datetime.datetime.now())}
 json_str = json.dumps(data)
 print(f'JSON: {json_str}')

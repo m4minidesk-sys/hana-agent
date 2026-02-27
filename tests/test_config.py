@@ -9,6 +9,9 @@ import yaml
 
 from yui.config import ConfigError, DEFAULT_CONFIG, load_config
 
+pytestmark = pytest.mark.unit
+
+
 
 class TestLoadConfig:
     """AC-06: config.yaml is loaded and validated on startup."""

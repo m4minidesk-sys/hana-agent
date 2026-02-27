@@ -14,6 +14,9 @@ from yui.meeting.models import (
 )
 
 
+
+pytestmark = pytest.mark.unit
+
 class TestTranscriptChunk:
     """Test TranscriptChunk data model."""
 

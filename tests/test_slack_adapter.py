@@ -7,6 +7,9 @@ import pytest
 
 from yui.slack_adapter import _load_tokens
 
+pytestmark = pytest.mark.component
+
+
 
 def test_load_tokens_from_env() -> None:
     """Test token loading from environment variables."""
