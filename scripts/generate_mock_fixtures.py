@@ -129,7 +129,11 @@ def main() -> None:
     
     module_path = ".".join(args.source_file.with_suffix("").parts)
     
-    print("# Generated fixtures — add to tests/conftest.py\n")
+    print("# Generated fixtures — add to tests/conftest.py")
+    print("# Required imports: from unittest.mock import patch, MagicMock")
+    print("# Required imports: import pytest")
+    print("# Required imports: from faker import Faker")
+    print()
     
     for interface in interfaces:
         if args.factory:
