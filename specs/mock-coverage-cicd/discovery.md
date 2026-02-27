@@ -3,7 +3,8 @@
 **日付**: 2026-02-27
 **タイプ**: ⚙️ 開発基盤
 **ステータス**: Draft → hanさんレビュー待ち
-**Appetite**: 11.5日 / Kiro CLI + GitHub Actions
+**Appetite**: 13日 / Kiro CLI + GitHub Actions
+**テスト思想**: goldbergyoni (R1-R28) + t-wada TDD原則 (TW1-TW8) 準拠
 **Issue**: [#75](https://github.com/m4minidesk-sys/yui-agent/issues/75)
 
 ---
@@ -18,6 +19,13 @@
 - mockは問題ではなく資産。コンポーネントテストでmockカバレッジ100%を目指す
 
 **タイプ判別理由**: テスト基盤の設計変更+CI/CDパイプライン構築 = 開発基盤
+
+### テスト品質原則（Kiro第3回レビューで指摘→追加）
+
+本プロジェクトはAGENTS.mdに定義された以下のテスト思想に完全準拠する：
+- **goldbergyoni**: R1(3パーツ名), R2(AAA), R4(ブラックボックス), R5(stub/spy優先), R6(faker), R7(Property-based), R13(コンポーネント最優先), R15(グローバルseed禁止), R16(5結果カバー), R17(障害シナリオ), R25(カバレッジ80%+), R27(ミューテーション)
+- **t-wada**: TW1(4性質), TW2(4因子), TW4(TDDサイクル), TW5(構造的結合回避), TW6(YAGNI)
+- **AGENTS.md厳守**: pytest.mark.skip全面禁止、全テストskip 0でPASS（E2E含む）
 
 ---
 
