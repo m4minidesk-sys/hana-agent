@@ -22,6 +22,9 @@ from yui.autonomy.reflexion import (
 )
 
 
+
+pytestmark = pytest.mark.component
+
 # --- Data class serialization tests ---
 
 

@@ -85,6 +85,17 @@ disallow_untyped_defs = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+addopts = "--tb=short"
+filterwarnings = [
+    "ignore::DeprecationWarning:bedrock_agentcore",
+    "ignore::PendingDeprecationWarning:bedrock_agentcore",
+    "ignore::DeprecationWarning:pydantic",
+]
 markers = [
     "aws: marks tests as requiring AWS credentials and Bedrock access (deselect with '-m \"not aws\"')",
+    "unit: Unit tests - test individual functions/classes in isolation",
+    "component: Component tests - test API/module boundaries with mocked dependencies",
+    "integration: Integration tests - test real external service interactions",
+    "e2e: End-to-end tests - test complete user workflows",
+    "security: Security tests - test injection, traversal, and attack scenarios",
 ]

@@ -17,10 +17,13 @@ from yui.tools.agentcore import code_execute, memory_recall, memory_store, web_b
 
 
 # Skip all tests unless AWS E2E testing is explicitly enabled
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("YUI_AWS_E2E"),
-    reason="AWS E2E tests require YUI_AWS_E2E environment variable"
-)
+pytestmark = [
+    pytest.mark.e2e,
+    pytest.mark.skipif(
+        not os.environ.get("YUI_AWS_E2E"),
+        reason="AWS E2E tests require YUI_AWS_E2E environment variable"
+    ),
+]
 
 
 class TestAgentCoreBrowserE2E:
@@ -378,6 +381,9 @@ console.log(sum);
 import json
 import datetime
 import math
+
+pytestmark = pytest.mark.e2e
+
 
 data = {'test': True, 'timestamp': str(datetime.datetime.now())}
 json_str = json.dumps(data)

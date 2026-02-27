@@ -14,6 +14,9 @@ from yui.workshop.executor import (
 )
 from yui.workshop.models import ExecutableStep, StepResult, StepType
 
+pytestmark = pytest.mark.component
+
+
 
 def _make_step(step_type=StepType.CONSOLE_ACTION, action=None, expected_result="Success",
                timeout_seconds=300, step_id="1.1", description="Test step"):

@@ -9,6 +9,9 @@ import pytest
 
 from yui.tools.safe_shell import create_safe_shell
 
+pytestmark = pytest.mark.component
+
+
 
 ALLOWLIST = ["ls", "cat", "grep", "find", "python3", "git"]
 BLOCKLIST = [

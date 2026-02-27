@@ -10,6 +10,9 @@ import pytest
 
 from yui.config import load_config
 
+pytestmark = pytest.mark.e2e
+
+
 
 class TestGuardrailsE2E:
     """End-to-End Guardrails integration tests using real AWS Bedrock."""

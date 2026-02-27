@@ -9,6 +9,9 @@ import pytest
 from yui.autonomy.conflict import Challenge, ConflictResolver
 from yui.autonomy.reflexion import ReviewFinding, ReviewSeverity
 
+pytestmark = pytest.mark.unit
+
+
 
 @pytest.fixture
 def resolver() -> ConflictResolver:

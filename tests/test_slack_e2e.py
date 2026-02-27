@@ -17,6 +17,9 @@ import pytest
 from yui.session import SessionManager
 from yui.slack_adapter import SlackHandler, _load_tokens, _summarize_messages
 
+pytestmark = pytest.mark.e2e
+
+
 
 @pytest.fixture
 def mock_agent():
