@@ -63,7 +63,6 @@ pytest tests/ -m 'not integration and not e2e' --cov=src/yui --cov-report=term-m
 | Fixture | Scope | Purpose | Usage Example |
 |---|---|---|---|
 | `mock_slack_client` | function | Stub for Slack WebClient | `def test_foo(mock_slack_client): ...` |
-| `mock_slack_socket` | function | Stub for Socket Mode adapter | Mocks Socket Mode connection |
 
 ### Session / Storage Fixtures
 

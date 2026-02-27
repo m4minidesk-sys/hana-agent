@@ -21,7 +21,8 @@ def extract_public_interfaces(source_file: Path) -> list[dict[str, Any]]:
         return []
     
     interfaces = []
-    for node in ast.walk(tree):
+    # Only iterate top-level nodes to avoid picking up class methods as standalone functions
+    for node in tree.body:
         if isinstance(node, ast.ClassDef) and not node.name.startswith("_"):
             interfaces.append({"type": "class", "name": node.name, "methods": _extract_methods(node)})
         elif isinstance(node, ast.FunctionDef) and not node.name.startswith("_"):
@@ -59,13 +60,13 @@ def {fixture_name}(fake):
     
     Uses faker for realistic data (R6).
     """
-    stub = MagicMock(spec={name})
+    with patch("{module_path}.{name}") as stub:
+        spec_methods = {interface["methods"]!r}
+        for method in spec_methods:
+            getattr(stub, method).return_value = fake.pydict()
 '''
     
-    for method in interface["methods"]:
-        code += f"    stub.{method}.return_value = fake.pydict()\n"
-    
-    code += "    return stub\n"
+    code += "        yield stub\n"
     return code
 
 
@@ -126,7 +127,7 @@ def main() -> None:
         print(f"No public interfaces found in {args.source_file}", file=sys.stderr)
         sys.exit(0)
     
-    module_path = str(args.source_file).replace("/", ".").replace(".py", "")
+    module_path = ".".join(args.source_file.with_suffix("").parts)
     
     print("# Generated fixtures — add to tests/conftest.py\n")
     

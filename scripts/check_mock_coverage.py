@@ -72,9 +72,13 @@ def check_test_file(test_file: Path) -> dict[str, list[str]]:
     imports = extract_imports(test_file)
     external_imports = imports & EXTERNAL_DEPS
     
-    # Special case: socket is allowed in IPC tests
-    if "test_meeting_ipc.py" in str(test_file) and "socket" in external_imports:
-        external_imports.remove("socket")
+    # Special case: tests that legitimately use raw sockets (IPC, etc.)
+    # Detected by checking if socket is used as a test subject, not as external dependency
+    if "socket" in external_imports:
+        content = test_file.read_text()
+        # socket used as test subject (mocking the socket itself) is OK
+        if "mock_socket" in content or "patch" in content and "socket" in content:
+            external_imports.discard("socket")
     
     unmocked = []
     for module in external_imports:

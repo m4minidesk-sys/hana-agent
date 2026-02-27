@@ -86,10 +86,15 @@ def main() -> None:
     
     fixtures = extract_fixtures(conftest_file)
     
-    # Exclude autouse fixtures, special fixtures, and common infrastructure fixtures
+    # Exclude infrastructure fixtures that are used indirectly:
+    # - enforce_autospec: autouse fixture, applied to all tests automatically
+    # - fake: used via faker seed per test, referenced as parameter
+    # - _pytest_: internal pytest fixtures
+    # - tmp_path, monkeypatch: built-in pytest fixtures
+    # - mock_*: core infrastructure fixtures used across many test files
+    # - tmp_workspace: shared workspace directory fixture
     exclude = {
         "enforce_autospec", "fake", "_pytest_", "tmp_path", "monkeypatch",
-        # Infrastructure fixtures that may be used indirectly
         "mock_bedrock_client", "mock_boto3_client", "mock_slack_client",
         "mock_bedrock_model", "mock_subprocess_run", "mock_open_file",
         "tmp_workspace", "mock_agentcore_available", "mock_agentcore_unavailable"
