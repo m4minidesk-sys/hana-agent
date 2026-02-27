@@ -62,7 +62,10 @@ class TestPostMessage:
             text="🧪 Yui E2E test: SL-02 post_message",
         )
         assert result["ok"] is True
-        assert result["message"]["text"] == "🧪 Yui E2E test: SL-02 post_message"
+        assert result["message"]["text"] in (
+            "🧪 Yui E2E test: SL-02 post_message",
+            ":test_tube: Yui E2E test: SL-02 post_message",
+        )
 
         # Cleanup: delete the message
         slack_client.chat_delete(channel=test_channel, ts=result["ts"])
