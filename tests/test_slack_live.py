@@ -11,10 +11,13 @@ import time
 
 import pytest
 
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("YUI_TEST_SLACK", ""),
-    reason="Set YUI_TEST_SLACK=1 to run live Slack tests",
-)
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not os.environ.get("YUI_TEST_SLACK", ""),
+        reason="Set YUI_TEST_SLACK=1 to run live Slack tests",
+    ),
+]
 
 
 @pytest.fixture

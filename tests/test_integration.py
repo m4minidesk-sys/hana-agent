@@ -22,12 +22,18 @@ from unittest import mock
 import pytest
 import yaml
 
-pytestmark = pytest.mark.unit
+pytestmark = pytest.mark.integration
+
+# NOTE: Local tests (no external deps) have @pytest.mark.unit override.
+# External tests (AWS/Slack/Kiro/E2E) keep the module-level integration marker
+# or override with e2e. This ensures skipif tests are excluded from CI's
+# `-m 'unit or component'` selection and don't count as unit/component skips.
 
 
 # ─── LOCAL integration tests (no external deps) ───
 
 
+@pytest.mark.unit
 class TestConfigIntegration:
     """Config loading with real YAML files."""
 
@@ -80,6 +86,7 @@ class TestConfigIntegration:
         assert "Be helpful" in prompt
 
 
+@pytest.mark.unit
 class TestSessionIntegration:
     """Full SQLite session lifecycle."""
 
@@ -143,6 +150,7 @@ class TestSessionIntegration:
             assert mode == "wal"
 
 
+@pytest.mark.unit
 class TestSafeShellIntegration:
     """Safe shell with real command execution."""
 
@@ -187,6 +195,7 @@ class TestSafeShellIntegration:
         assert "blocked" in str(result).lower() or "error" in str(result).lower()
 
 
+@pytest.mark.unit
 class TestGitToolIntegration:
     """Git tool with real git repo."""
 
@@ -246,6 +255,7 @@ class TestGitToolIntegration:
 # ─── AWS integration tests ───
 
 
+@pytest.mark.integration
 @pytest.mark.skipif(
     not os.environ.get("YUI_TEST_AWS", ""),
     reason="Set YUI_TEST_AWS=1 to run AWS integration tests",
@@ -324,6 +334,7 @@ class TestBedrockIntegration:
 # ─── Kiro CLI integration tests ───
 
 
+@pytest.mark.integration
 @pytest.mark.skipif(
     not Path("~/.local/bin/kiro-cli").expanduser().exists(),
     reason="Kiro CLI not installed",
@@ -359,6 +370,7 @@ class TestKiroDelegateIntegration:
 # ─── Slack integration tests ───
 
 
+@pytest.mark.integration
 @pytest.mark.skipif(
     not os.environ.get("YUI_TEST_SLACK", ""),
     reason="Set YUI_TEST_SLACK=1 to run Slack integration tests",
@@ -397,6 +409,7 @@ class TestSlackIntegration:
 # ─── End-to-end integration tests ───
 
 
+@pytest.mark.e2e
 @pytest.mark.skipif(
     not os.environ.get("YUI_TEST_AWS", ""),
     reason="Set YUI_TEST_AWS=1 to run E2E tests",

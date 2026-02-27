@@ -268,7 +268,7 @@ class TestAWSIntegration:
     
     @pytest.mark.aws
     @pytest.mark.skipif(
-        not os.getenv("AWS_PROFILE") or os.getenv("SKIP_AWS_TESTS"), 
+        not (os.getenv("AWS_PROFILE") or os.getenv("AWS_ACCESS_KEY_ID")) or os.getenv("SKIP_AWS_TESTS"), 
         reason="AWS credentials not available or SKIP_AWS_TESTS set"
     )
     def test_validate_template_real_aws(self, cfn_template_str):
@@ -289,7 +289,7 @@ class TestAWSIntegration:
 
     @pytest.mark.aws
     @pytest.mark.skipif(
-        not os.getenv("AWS_PROFILE") or os.getenv("SKIP_AWS_TESTS"),
+        not (os.getenv("AWS_PROFILE") or os.getenv("AWS_ACCESS_KEY_ID")) or os.getenv("SKIP_AWS_TESTS"),
         reason="AWS credentials not available or SKIP_AWS_TESTS set"
     )
     def test_create_changeset_dry_run(self, cfn_template_str):
