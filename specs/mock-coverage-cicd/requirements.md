@@ -3,9 +3,9 @@
 > **Discovery**: `specs/mock-coverage-cicd/discovery.md`
 > **Issue**: [#75](https://github.com/m4minidesk-sys/yui-agent/issues/75)
 > **方針**: mockは資産。全廃ではなく最大活用。
-> **Appetite**: 17.5日（クラウドテスト追加+レビュー指摘反映で+4.5日）
+> **Appetite**: 19.0日（元13日 + クラウドテスト追加+レビュー指摘反映で+6日）
 > **テスト思想**: goldbergyoni (R1-R28) + t-wada TDD原則 (TW1-TW8) 準拠
-> **Rev**: v2.1 — 2026-02-27 Kiroクロスレビュー指摘反映（🔴2件+🟡7件+🟢4件）
+> **Rev**: v2.2 — 2026-02-27 Kiro再レビュー指摘反映（Appetite数値修正+比率整合）
 
 ---
 
@@ -124,7 +124,7 @@ Phase 6（Lambda Deployment — クラウドSlackアダプタ）の実装が直�
 |---|---|---|
 | FR-01-1 | `tests/conftest.py` にpytestマーカー5種を定義 | `pytest --markers` で unit/component/integration/e2e/security が表示 |
 | FR-01-2 | `pyproject.toml` の `[tool.pytest.ini_options]` にマーカー登録 | マーカー未登録の警告が0件 |
-| FR-01-3 | 既存46テストファイルにマーカー付与 | 全ファイルに適切なマーカー、テストピラミッド比率: Unit ~20% / Component ~55% / Integration ~15% / E2E ~10% |
+| FR-01-3 | 既存46テストファイルにマーカー付与 | 全ファイルに適切なマーカー、テストピラミッド比率: Unit ~20% / Component ~50% / Integration ~20% / E2E ~10%（クラウドテスト追加でintegration比率増加） |
 
 ### FR-02: mock共通基盤
 
@@ -303,7 +303,7 @@ Phase 6（Lambda Deployment — クラウドSlackアダプタ）の実装が直�
 | 3d | CI/CD拡張+mock品質検証+E2Eジョブ | 1.0日 | AYA | FR-04全項, FR-05-5/6/7, FR-08-D全項 |
 | 4 | カバレッジ段階達成+Property-based testing+ミューテーションテスト+週次integration test | 2.0日 | AYA+Kiro | NFR-02-1/4, FR-06-2/3, 最終検証 |
 
-**合計: 17.5日**（完了済み8.5日 + 残り10.5日。クラウドテスト3Phase + レビュー指摘反映で+6日）
+**合計: 19.0日**（完了済み8.5日 + 残り10.5日。元13日 + クラウドテスト3Phase+レビュー指摘反映で+6日）
 
 ### Phase 3a-3c テスト設計詳細
 
@@ -417,4 +417,4 @@ API GW endpoint      ←──  Phase 3b-3c（インテグレーション/E2E）
 **フォールバック（Phase 6遅延時）:**
 - Phase 6が遅延した場合: Phase 3b-3cは保留し、Phase 2c + Phase 4を先行実施
 - Phase 6完了後にPhase 3b-3cを再開
-- 実効Appetite: Phase 6完了前提で10日 / Phase 6遅延時は6.5日（Phase 3b-3c後送り）
+- 実効Appetite: Phase 6完了前提で残り10.5日 / Phase 6遅延時は残り6.5日（Phase 3b全体2.0日 + Phase 3c全体1.5日 + Phase 3a後半0.5日 = 4.0日をPhase 6完了後に後送り）
