@@ -18,13 +18,18 @@ from faker import Faker
 # ---------------------------------------------------------------------------
 
 @pytest.fixture
-def fake():
+def fake(request):
     """Provide a Faker instance for generating realistic test data (R6).
 
-    Each test gets its own Faker instance with a unique seed (R15).
+    Each test gets its own Faker instance seeded from the test node id (R15).
+    This ensures reproducibility: same test → same seed → same data.
+    Different tests → different seeds → independent data.
+
     Usage: fake.name(), fake.email(), fake.text(), fake.url(), etc.
     """
-    return Faker()
+    f = Faker()
+    f.seed_instance(hash(request.node.nodeid) % (2**32))
+    return f
 
 
 # ---------------------------------------------------------------------------
