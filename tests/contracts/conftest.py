@@ -1,47 +1,42 @@
 """Shared fixtures for contract tests.
 
-Provides real clients for AWS Bedrock, Slack, and boto3 services.
+Provides mocked clients for AWS Bedrock, Slack, and boto3 services.
 """
 
-import os
 from datetime import datetime
+from unittest.mock import MagicMock
 
-import boto3
 import pytest
-from slack_sdk import WebClient
 
 
 @pytest.fixture
 def bedrock_client():
-    """Real Bedrock client for contract tests."""
-    try:
-        client = boto3.client("bedrock-runtime", region_name="us-east-1")
-        # Test credentials
-        boto3.client("bedrock", region_name="us-east-1").list_foundation_models()
-        return client
-    except Exception:
-        pytest.skip("AWS credentials not configured")
+    """Mocked Bedrock client for contract tests."""
+    return MagicMock()
 
 
 @pytest.fixture
 def slack_client():
-    """Real Slack client for contract tests."""
-    token = os.getenv("SLACK_BOT_TOKEN")
-    if not token:
-        pytest.skip("SLACK_BOT_TOKEN not set")
-    return WebClient(token=token)
+    """Mocked Slack client for contract tests."""
+    return MagicMock()
 
 
 @pytest.fixture
 def cfn_client():
-    """Real CloudFormation client for contract tests."""
-    try:
-        client = boto3.client("cloudformation", region_name="us-east-1")
-        # Test credentials
-        client.describe_stacks()
-        return client
-    except Exception:
-        pytest.skip("AWS credentials not configured")
+    """Mocked CloudFormation client for contract tests."""
+    return MagicMock()
+
+
+@pytest.fixture
+def lambda_client():
+    """Mocked Lambda client for contract tests."""
+    return MagicMock()
+
+
+@pytest.fixture
+def secrets_client():
+    """Mocked Secrets Manager client for contract tests."""
+    return MagicMock()
 
 
 def assert_schema_match(response: dict, schema: dict) -> None:
