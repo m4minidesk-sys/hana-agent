@@ -11,10 +11,13 @@ import time
 
 import pytest
 
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("YUI_TEST_SLACK", ""),
-    reason="Set YUI_TEST_SLACK=1 to run live Slack tests",
-)
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not os.environ.get("YUI_TEST_SLACK", ""),
+        reason="Set YUI_TEST_SLACK=1 to run live Slack tests",
+    ),
+]
 
 
 @pytest.fixture
@@ -59,7 +62,10 @@ class TestPostMessage:
             text="🧪 Yui E2E test: SL-02 post_message",
         )
         assert result["ok"] is True
-        assert result["message"]["text"] == "🧪 Yui E2E test: SL-02 post_message"
+        assert result["message"]["text"] in (
+            "🧪 Yui E2E test: SL-02 post_message",
+            ":test_tube: Yui E2E test: SL-02 post_message",
+        )
 
         # Cleanup: delete the message
         slack_client.chat_delete(channel=test_channel, ts=result["ts"])

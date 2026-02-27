@@ -280,6 +280,7 @@ try:
 except ImportError:
     AWS_AVAILABLE = False
 
+@pytest.mark.e2e
 @pytest.mark.aws
 @pytest.mark.skipif(not AWS_AVAILABLE, reason="boto3 not installed")
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", True)
@@ -292,6 +293,7 @@ def test_kb_retrieve_e2e():
     pytest.skip("E2E test — requires real Knowledge Base provisioning")
 
 
+@pytest.mark.e2e
 @pytest.mark.aws
 @pytest.mark.skipif(not AWS_AVAILABLE, reason="boto3 not installed")
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", True)

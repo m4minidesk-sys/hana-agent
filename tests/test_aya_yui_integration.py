@@ -18,10 +18,13 @@ import json
 import pytest
 
 # Skip unless explicitly enabled (these make real Slack API calls)
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("YUI_LIVE_INTEGRATION"),
-    reason="Set YUI_LIVE_INTEGRATION=1 to run live AYA↔Yui integration tests",
-)
+pytestmark = [
+    pytest.mark.e2e,
+    pytest.mark.skipif(
+        not os.environ.get("YUI_LIVE_INTEGRATION"),
+        reason="Set YUI_LIVE_INTEGRATION=1 to run live AYA↔Yui integration tests",
+    ),
+]
 
 # Constants
 YUI_TEST_CHANNEL = "C0AH55CBKGW"  # #yui-test

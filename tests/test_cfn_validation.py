@@ -268,7 +268,7 @@ class TestAWSIntegration:
     
     @pytest.mark.aws
     @pytest.mark.skipif(
-        not os.getenv("AWS_PROFILE") or os.getenv("SKIP_AWS_TESTS"), 
+        not (os.getenv("AWS_PROFILE") or os.getenv("AWS_ACCESS_KEY_ID")) or os.getenv("SKIP_AWS_TESTS"), 
         reason="AWS credentials not available or SKIP_AWS_TESTS set"
     )
     def test_validate_template_real_aws(self, cfn_template_str):
@@ -289,7 +289,7 @@ class TestAWSIntegration:
 
     @pytest.mark.aws
     @pytest.mark.skipif(
-        not os.getenv("AWS_PROFILE") or os.getenv("SKIP_AWS_TESTS"),
+        not (os.getenv("AWS_PROFILE") or os.getenv("AWS_ACCESS_KEY_ID")) or os.getenv("SKIP_AWS_TESTS"),
         reason="AWS credentials not available or SKIP_AWS_TESTS set"
     )
     def test_create_changeset_dry_run(self, cfn_template_str):
@@ -305,6 +305,7 @@ class TestAWSIntegration:
                 StackName=stack_name,
                 TemplateBody=cfn_template_str,
                 ChangeSetName=changeset_name,
+                ChangeSetType="CREATE",
                 Parameters=[
                     {"ParameterKey": "Environment", "ParameterValue": "dev"},
                     {"ParameterKey": "BedrockRegion", "ParameterValue": "us-east-1"},
@@ -318,12 +319,16 @@ class TestAWSIntegration:
             assert response["Id"]  # changeset IDが取得できることを確認
             
         finally:
-            # cleanup: changeset削除
+            # cleanup: changeset + stack削除（CREATE typeはスタックも作るため）
             try:
                 client.delete_change_set(
                     StackName=stack_name,
                     ChangeSetName=changeset_name
                 )
+            except Exception:
+                pass  # cleanup失敗は無視
+            try:
+                client.delete_stack(StackName=stack_name)
             except Exception:
                 pass  # cleanup失敗は無視
 

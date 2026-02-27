@@ -404,8 +404,10 @@ class TestTimeoutRetryLogic:
 
 
 # AWS E2E integration tests (requires AWS credentials and network)
+@pytest.mark.e2e
 class TestConverseE2E:
     """End-to-end tests with real Bedrock API calls."""
+    pytestmark = pytest.mark.e2e  # Override module-level component marker
 
     @pytest.mark.aws
     def test_real_throttling_handling(self):
