@@ -132,6 +132,30 @@ ruff check .
 mypy yui/
 ```
 
+## Testing
+
+### Unit/Component Tests
+```bash
+pytest tests/ -m 'not integration and not e2e'
+```
+
+### Contract Tests (requires AWS credentials)
+```bash
+pytest tests/contracts/ -m integration
+```
+
+### Mock Drift Detection
+```bash
+# Dry-run mode
+python scripts/check_mock_drift.py --dry-run
+
+# Check specific API
+python scripts/check_mock_drift.py --api bedrock --dry-run
+
+# Create GitHub Issue (CI only)
+python scripts/check_mock_drift.py --create-issue
+```
+
 ## Phase Roadmap
 
 | Phase | Scope | Timeline |

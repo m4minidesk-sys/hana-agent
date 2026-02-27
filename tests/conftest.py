@@ -7,10 +7,42 @@ Shared mock fixtures follow goldbergyoni R5 (stub/spy over mock)
 and R15 (no global seed — each fixture creates its own data).
 """
 
+import unittest.mock
 from unittest.mock import MagicMock, patch
 
 import pytest
 from faker import Faker
+
+
+# ---------------------------------------------------------------------------
+# autospec enforcement (Phase 2c)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def enforce_autospec(request, monkeypatch):
+    """Force autospec=True for all unittest.mock.patch calls.
+    
+    Opt-out: @pytest.mark.no_autospec
+    """
+    if "no_autospec" in request.keywords:
+        yield
+        return
+    
+    original_patch = unittest.mock.patch
+    
+    def autospec_patch(target, *args, autospec=True, **kwargs):
+        return original_patch(target, *args, autospec=autospec, **kwargs)
+    
+    # Copy over the object attribute from original patch
+    autospec_patch.object = original_patch.object
+    autospec_patch.dict = original_patch.dict
+    autospec_patch.multiple = original_patch.multiple
+    autospec_patch.stopall = original_patch.stopall
+    autospec_patch.TEST_PREFIX = original_patch.TEST_PREFIX
+    
+    monkeypatch.setattr(unittest.mock, 'patch', autospec_patch)
+    
+    yield
 
 
 # ---------------------------------------------------------------------------
