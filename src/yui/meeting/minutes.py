@@ -20,7 +20,7 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 # Default model for minutes generation
-DEFAULT_MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+DEFAULT_MODEL_ID = "us.anthropic.claude-haiku-3-20250307-v1:0"
 DEFAULT_REGION = "us-east-1"
 DEFAULT_MAX_TOKENS = 4096
 
@@ -102,7 +102,11 @@ def _create_bedrock_client(config: dict[str, Any]) -> Any:
 
 def _get_model_id(config: dict[str, Any]) -> str:
     """Get model ID from config."""
-    return config.get("model", {}).get("model_id", DEFAULT_MODEL_ID)
+    return (
+        config.get("meeting", {}).get("model_id")
+        or config.get("model", {}).get("model_id")
+        or DEFAULT_MODEL_ID
+    )
 
 
 def _get_max_tokens(config: dict[str, Any]) -> int:

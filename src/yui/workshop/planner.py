@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-DEFAULT_MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+DEFAULT_MODEL_ID = "us.anthropic.claude-haiku-3-20250307-v1:0"
 
 DEFAULT_STEP_TIMEOUT_SECONDS = 300
 
