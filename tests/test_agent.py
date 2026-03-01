@@ -37,9 +37,17 @@ class TestSystemPrompt:
         assert "I am Yui" in prompt
 
     def test_missing_both(self, tmp_path):
-        """Both missing → empty string (no crash)."""
+        """Both missing → fallback default prompt (never empty, avoids Bedrock min-length error)."""
+        from yui.agent import _DEFAULT_SYSTEM_PROMPT
+
         prompt = _load_system_prompt(tmp_path)
-        assert prompt == ""
+        assert prompt == _DEFAULT_SYSTEM_PROMPT
+        assert len(prompt) >= 1  # Bedrock requires min length 1
+
+    def test_missing_both_is_not_empty(self, tmp_path):
+        """Bedrock validation guard: system prompt must never be empty string."""
+        prompt = _load_system_prompt(tmp_path)
+        assert prompt.strip() != "", "Empty system prompt causes Bedrock ParamValidationError"
 
 
 class TestCreateAgent:

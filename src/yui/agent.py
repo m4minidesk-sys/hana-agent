@@ -298,10 +298,17 @@ def _register_phase2_tools(config: dict) -> list:
     return tools
 
 
+# Fallback system prompt used when no workspace files are found.
+# Bedrock Converse API requires system[0].text to have min length 1.
+_DEFAULT_SYSTEM_PROMPT = "You are Yui, a helpful AI assistant."
+
+
 def _load_system_prompt(workspace: Path) -> str:
     """Load system prompt from AGENTS.md and SOUL.md in workspace.
 
     Missing files are logged but not treated as errors (E-11).
+    Falls back to a default prompt when no files are found to avoid
+    Bedrock Converse API validation errors (min length 1 for system text).
     """
     parts: list[str] = []
 
@@ -312,7 +319,7 @@ def _load_system_prompt(workspace: Path) -> str:
         parts.append(agents_md.read_text(encoding="utf-8"))
         logger.info("Loaded AGENTS.md (%d chars)", len(parts[-1]))
     else:
-        logger.info("AGENTS.md not found at %s — using empty prompt", agents_md)
+        logger.info("AGENTS.md not found at %s — skipping", agents_md)
 
     if soul_md.exists():
         parts.append(soul_md.read_text(encoding="utf-8"))
@@ -320,7 +327,14 @@ def _load_system_prompt(workspace: Path) -> str:
     else:
         logger.info("SOUL.md not found at %s — skipping", soul_md)
 
-    return "\n\n".join(parts)
+    result = "\n\n".join(parts)
+    if not result.strip():
+        logger.warning(
+            "No system prompt files found in %s — using default fallback prompt",
+            workspace,
+        )
+        return _DEFAULT_SYSTEM_PROMPT
+    return result
 
 
 def _cleanup_mcp() -> None:
