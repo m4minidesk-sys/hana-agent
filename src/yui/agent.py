@@ -298,10 +298,15 @@ def _register_phase2_tools(config: dict) -> list:
     return tools
 
 
+DEFAULT_SYSTEM_PROMPT = "You are Yui, a helpful AI assistant."
+
+
 def _load_system_prompt(workspace: Path) -> str:
     """Load system prompt from AGENTS.md and SOUL.md in workspace.
 
     Missing files are logged but not treated as errors (E-11).
+    Falls back to DEFAULT_SYSTEM_PROMPT if no content is found, to prevent
+    Bedrock Converse API ParamValidationError on empty system prompt (Issue #95).
     """
     parts: list[str] = []
 
@@ -312,13 +317,17 @@ def _load_system_prompt(workspace: Path) -> str:
         parts.append(agents_md.read_text(encoding="utf-8"))
         logger.info("Loaded AGENTS.md (%d chars)", len(parts[-1]))
     else:
-        logger.info("AGENTS.md not found at %s — using empty prompt", agents_md)
+        logger.warning("AGENTS.md not found at %s — will use fallback if no other prompt sources", agents_md)
 
     if soul_md.exists():
         parts.append(soul_md.read_text(encoding="utf-8"))
         logger.info("Loaded SOUL.md (%d chars)", len(parts[-1]))
     else:
         logger.info("SOUL.md not found at %s — skipping", soul_md)
+
+    if not parts:
+        logger.warning("No system prompt files found — using DEFAULT_SYSTEM_PROMPT")
+        return DEFAULT_SYSTEM_PROMPT
 
     return "\n\n".join(parts)
 
