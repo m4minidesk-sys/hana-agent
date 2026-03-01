@@ -413,3 +413,100 @@ class TestAWSIntegrationMocked:
             assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
             assert "arn:aws:cloudformation" in response["Id"]
             mock_client.create_change_set.assert_called_once()
+
+
+# ──────────────────────────────────────────────
+# Issue #74: 異常系・境界値テスト追加
+# ──────────────────────────────────────────────
+
+class TestCFnValidationNegative:
+    """Issue #74: 不正テンプレート・APIエラーの異常系テスト（mockedで実際のAPIを呼ぶ）"""
+
+    pytestmark = pytest.mark.unit
+
+    def test_validate_template_mocked__missing_resources__raises_client_error(self):
+        """Resources なしのテンプレートはCloudFormation validateで ValidationError。"""
+        from botocore.exceptions import ClientError
+
+        mock_client = MagicMock()
+        mock_client.validate_template.side_effect = ClientError(
+            {"Error": {"Code": "ValidationError", "Message": "Template format error: Missing required resource type 'Resources'"}},
+            "ValidateTemplate"
+        )
+
+        with patch("boto3.client", return_value=mock_client):
+            client = boto3.client("cloudformation", region_name="us-east-1")
+            with pytest.raises(ClientError) as exc_info:
+                client.validate_template(TemplateBody="{}")
+            assert "ValidationError" in str(exc_info.value)
+            assert "Resources" in str(exc_info.value)
+
+    def test_validate_template_mocked__invalid_yaml__raises_client_error(self):
+        """YAML構文エラーのテンプレートはCloudFormation validateで ValidationError。"""
+        from botocore.exceptions import ClientError
+
+        mock_client = MagicMock()
+        mock_client.validate_template.side_effect = ClientError(
+            {"Error": {"Code": "ValidationError", "Message": "Template format error: YAML not well-formed"}},
+            "ValidateTemplate"
+        )
+
+        with patch("boto3.client", return_value=mock_client):
+            client = boto3.client("cloudformation", region_name="us-east-1")
+            with pytest.raises(ClientError) as exc_info:
+                client.validate_template(TemplateBody=": invalid: yaml: {{{{")
+            assert "ValidationError" in str(exc_info.value)
+            assert "YAML" in str(exc_info.value)
+
+    def test_validate_template_mocked__access_denied__raises_client_error(self):
+        """CFn APIアクセス拒否はAccessDeniedException（IAM権限不足）。"""
+        from botocore.exceptions import ClientError
+
+        mock_client = MagicMock()
+        mock_client.validate_template.side_effect = ClientError(
+            {"Error": {"Code": "AccessDeniedException", "Message": "User not authorized to perform: cloudformation:ValidateTemplate"}},
+            "ValidateTemplate"
+        )
+
+        with patch("boto3.client", return_value=mock_client):
+            client = boto3.client("cloudformation", region_name="us-east-1")
+            with pytest.raises(ClientError) as exc_info:
+                client.validate_template(TemplateBody="...")
+            assert "AccessDeniedException" in str(exc_info.value)
+
+    def test_create_changeset_mocked__already_exists__raises_client_error(self):
+        """既存ChangeSetへの重複作成はAlreadyExistsException。"""
+        from botocore.exceptions import ClientError
+
+        mock_client = MagicMock()
+        mock_client.create_change_set.side_effect = ClientError(
+            {"Error": {"Code": "AlreadyExistsException", "Message": "ChangeSet already exists"}},
+            "CreateChangeSet"
+        )
+
+        with patch("boto3.client", return_value=mock_client):
+            client = boto3.client("cloudformation", region_name="us-east-1")
+            with pytest.raises(ClientError) as exc_info:
+                client.create_change_set(
+                    StackName="existing-stack",
+                    TemplateBody="...",
+                    ChangeSetName="duplicate-changeset",
+                    Capabilities=["CAPABILITY_NAMED_IAM"],
+                )
+            assert "AlreadyExistsException" in str(exc_info.value)
+
+    def test_validate_template_mocked__empty_template__raises_client_error(self):
+        """空のテンプレート文字列はCloudFormation validateで ValidationError。"""
+        from botocore.exceptions import ClientError
+
+        mock_client = MagicMock()
+        mock_client.validate_template.side_effect = ClientError(
+            {"Error": {"Code": "ValidationError", "Message": "Template format error: At least one Resources member must be defined."}},
+            "ValidateTemplate"
+        )
+
+        with patch("boto3.client", return_value=mock_client):
+            client = boto3.client("cloudformation", region_name="us-east-1")
+            with pytest.raises(ClientError) as exc_info:
+                client.validate_template(TemplateBody="")
+            assert "ValidationError" in str(exc_info.value)

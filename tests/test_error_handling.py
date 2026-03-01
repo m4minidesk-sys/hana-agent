@@ -167,6 +167,7 @@ class TestContextWindowExceeded:
         db_path = str(tmp_path / "test.db")
         manager = SessionManager(db_path, compaction_threshold=5, keep_recent=2)
         session_id = "ctx-window-test"
+        manager.get_or_create_session(session_id)  # Required: create session before adding messages
 
         # Add messages exceeding the compaction threshold
         for i in range(10):
