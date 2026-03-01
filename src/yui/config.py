@@ -95,6 +95,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "auto_connect": True,
     },
     "workshop": {
+        "planner_model_id": "us.anthropic.claude-haiku-3-20250307-v1:0",
+        "executor_model_id": "us.anthropic.claude-haiku-3-20250307-v1:0",
         "test": {
             "region": "us-east-1",
             "cleanup_after_test": True,

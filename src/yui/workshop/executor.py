@@ -22,7 +22,7 @@ from yui.workshop.models import ExecutableStep, StepOutcome, StepResult, StepTyp
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+DEFAULT_MODEL_ID = "us.anthropic.claude-haiku-3-20250307-v1:0"
 DEFAULT_REGION = "us-east-1"
 DEFAULT_STEP_TIMEOUT = 300
 
