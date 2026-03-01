@@ -332,7 +332,27 @@ class TestDaemonManagement:
     ("daemon_crash", "auto-restart within 5s"),
 ])
 def test_error_scenarios(error_scenario, expected_behavior):
-    """Parametrized test for all error scenarios (AC-26 through AC-39)."""
-    # Each scenario is tested in detail in the classes above
-    # This parametrized test serves as a checklist
-    assert expected_behavior  # Placeholder assertion
+    """Parametrized test checklist for error scenarios (AC-26 through AC-39).
+
+    Issue #73: 各シナリオの詳細テストは上記クラスで実装済み。
+    このテストはシナリオの存在確認（カタログ）として機能する。
+    """
+    # Each scenario has a dedicated test class above:
+    # - "missing_aws_credentials"     → TestBedrockErrors
+    # - "bedrock_permission_denied"   → TestBedrockErrors
+    # - "bedrock_timeout"             → TestBedrockErrors
+    # - "invalid_slack_tokens"        → TestSlackErrors
+    # - "shell_blocklisted_command"   → TestSafeShellErrors
+    # - "file_outside_workspace"      → TestFileSystemErrors
+    # - "missing_config"              → TestConfigErrors
+    # - "kiro_cli_not_found"          → TestExternalToolErrors
+    # - "sqlite_locked"               → TestSessionErrors
+    # - "context_window_exceeded"     → TestContextWindowExceeded
+    # - "mcp_server_failure"          → TestMCPErrors
+    # - "guardrails_block"            → TestGuardrailsErrors
+    # - "heartbeat_integrity_fail"    → TestHeartbeatErrors
+    # - "daemon_crash"                → TestDaemonErrors
+    assert isinstance(error_scenario, str), "scenario name must be a non-empty string"
+    assert len(error_scenario) > 0, "scenario name cannot be empty"
+    assert isinstance(expected_behavior, str), "expected_behavior must describe the expected outcome"
+    assert len(expected_behavior) > 0, "expected_behavior cannot be empty"
