@@ -84,10 +84,12 @@ def web_browse(url: str, task: str = "extract main content", timeout: int = 30) 
                 ws_url, ws_headers = browser.generate_ws_headers()
                 with sync_playwright() as p:
                     b = p.chromium.connect_over_cdp(ws_url, headers=ws_headers)
-                    page = b.contexts[0].pages[0] if b.contexts and b.contexts[0].pages else b.new_page()
-                    page.goto(url, timeout=timeout * 1000)
-                    content_text = page.content()
-                    b.close()
+                    try:
+                        page = b.contexts[0].pages[0] if b.contexts and b.contexts[0].pages else b.new_page()
+                        page.goto(url, timeout=timeout * 1000)
+                        content_text = page.content()
+                    finally:
+                        b.close()
                 return content_text[:5000] if content_text else "(no content)"
             except Exception as inner_e:
                 logger.error("Browser automation error (session: %s): %s", session_id, inner_e)
@@ -147,7 +149,6 @@ def memory_store(key: str, value: str, category: str = "general", max_retries: i
     for attempt in range(max_retries + 1):
         try:
             import uuid
-            import datetime
             client = _get_memory_client()
             # Create or get memory store (idempotent)
             memory_info = client.create_or_get_memory(
@@ -482,10 +483,12 @@ def web_search(query: str, num_results: int = 10, timeout: int = 30) -> str:
                 ws_url, ws_headers = browser.generate_ws_headers()
                 with sync_playwright() as p:
                     b = p.chromium.connect_over_cdp(ws_url, headers=ws_headers)
-                    page = b.contexts[0].pages[0] if b.contexts and b.contexts[0].pages else b.new_page()
-                    page.goto(search_url, timeout=timeout * 1000)
-                    search_content = page.content()
-                    b.close()
+                    try:
+                        page = b.contexts[0].pages[0] if b.contexts and b.contexts[0].pages else b.new_page()
+                        page.goto(search_url, timeout=timeout * 1000)
+                        search_content = page.content()
+                    finally:
+                        b.close()
                 
                 if not search_content or not search_content.strip():
                     return f"No search results found for query: {query}"

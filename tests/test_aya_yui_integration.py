@@ -18,15 +18,11 @@ import json
 import pytest
 
 # Skip unless explicitly enabled (these make real Slack API calls)
-# Also requires YUI_AGENT_RUNNING=1 to confirm Yui agent is active in the environment
 pytestmark = [
     pytest.mark.e2e,
     pytest.mark.skipif(
-        not os.environ.get("YUI_LIVE_INTEGRATION") or not os.environ.get("YUI_AGENT_RUNNING"),
-        reason=(
-            "Set YUI_LIVE_INTEGRATION=1 AND YUI_AGENT_RUNNING=1 to run live AYA↔Yui integration tests. "
-            "YUI_AGENT_RUNNING requires Yui to be started first: python -m yui --slack"
-        ),
+        not os.environ.get("YUI_LIVE_INTEGRATION"),
+        reason="Set YUI_LIVE_INTEGRATION=1 to run live AYA↔Yui integration tests",
     ),
 ]
 
