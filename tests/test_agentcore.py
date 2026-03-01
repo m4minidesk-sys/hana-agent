@@ -13,17 +13,24 @@ pytestmark = pytest.mark.component
 # --- web_browse ---
 
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", True)
+@patch("yui.tools.agentcore.PLAYWRIGHT_AVAILABLE", True)
+@patch("yui.tools.agentcore.sync_playwright", create=True)
 @patch("yui.tools.agentcore.browser_session")
-def test_web_browse(mock_session) -> None:
-    """AC-17: Web browse via AgentCore Browser."""
-    mock_browser = MagicMock()
-    mock_browser.start.return_value = "session-123"
-    mock_browser.invoke.side_effect = [
-        None,  # navigate
-        {"text": "Example content from page"},  # extract
-    ]
-    mock_session.return_value.__enter__ = MagicMock(return_value=mock_browser)
+def test_web_browse(mock_session, mock_playwright) -> None:
+    """AC-17: Web browse via AgentCore Browser + Playwright."""
+    mock_browser_client = MagicMock()
+    mock_browser_client.session_id = "session-123"
+    mock_browser_client.generate_ws_headers.return_value = (
+        "wss://example.com/browser", {"Authorization": "SigV4 xxx"}
+    )
+    mock_session.return_value.__enter__ = MagicMock(return_value=mock_browser_client)
     mock_session.return_value.__exit__ = MagicMock(return_value=False)
+
+    mock_page = MagicMock()
+    mock_page.content.return_value = "Example content from page"
+    mock_pw_browser = MagicMock()
+    mock_pw_browser.contexts = [MagicMock(pages=[mock_page])]
+    mock_playwright.return_value.__enter__.return_value.chromium.connect_over_cdp.return_value = mock_pw_browser
 
     result = web_browse(url="https://example.com", task="extract content")
     assert "Example content from page" in result
@@ -38,6 +45,7 @@ def test_web_browse_unavailable() -> None:
 
 
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", True)
+@patch("yui.tools.agentcore.PLAYWRIGHT_AVAILABLE", True)
 @patch("yui.tools.agentcore.browser_session")
 def test_web_browse_permission_denied(mock_session) -> None:
     """Web browse with AccessDeniedException."""
@@ -55,14 +63,17 @@ def test_web_browse_permission_denied(mock_session) -> None:
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", True)
 @patch("yui.tools.agentcore._get_memory_client")
 def test_memory_store(mock_get_client) -> None:
-    """AC-18: Memory store via AgentCore Memory."""
+    """AC-18: Memory store via AgentCore Memory (new SDK API)."""
     mock_client = MagicMock()
+    mock_client.create_or_get_memory.return_value = {"memoryId": "mem-123"}
+    mock_client.create_event.return_value = {"eventId": "evt-456"}
     mock_get_client.return_value = mock_client
 
     result = memory_store(key="preference", value="dark mode", category="user")
     assert "Stored" in result
     assert "preference" in result
-    mock_client.add_memory.assert_called_once()
+    mock_client.create_or_get_memory.assert_called_once()
+    mock_client.create_event.assert_called_once()
 
 
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", False)
@@ -78,10 +89,11 @@ def test_memory_store_unavailable() -> None:
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", True)
 @patch("yui.tools.agentcore._get_memory_client")
 def test_memory_recall(mock_get_client) -> None:
-    """AC-18: Memory recall via AgentCore Memory."""
+    """AC-18: Memory recall via AgentCore Memory (new SDK API)."""
     mock_client = MagicMock()
-    mock_client.search_memory.return_value = [
-        {"content": "dark mode preference", "score": 0.95},
+    mock_client.create_or_get_memory.return_value = {"memoryId": "mem-123"}
+    mock_client.retrieve_memories.return_value = [
+        {"content": {"text": "dark mode preference"}, "score": 0.95},
     ]
     mock_get_client.return_value = mock_client
 
@@ -93,9 +105,10 @@ def test_memory_recall(mock_get_client) -> None:
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", True)
 @patch("yui.tools.agentcore._get_memory_client")
 def test_memory_recall_empty(mock_get_client) -> None:
-    """Memory recall with no results."""
+    """Memory recall with no results (new SDK API)."""
     mock_client = MagicMock()
-    mock_client.search_memory.return_value = []
+    mock_client.create_or_get_memory.return_value = {"memoryId": "mem-123"}
+    mock_client.retrieve_memories.return_value = []
     mock_get_client.return_value = mock_client
 
     result = memory_recall(query="nonexistent")

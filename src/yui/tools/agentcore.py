@@ -32,6 +32,14 @@ except ImportError:
     AGENTCORE_AVAILABLE = False
     logger.warning("bedrock-agentcore SDK not available — AgentCore tools disabled")
 
+# Playwright is required for Browser automation — optional dependency
+try:
+    from playwright.sync_api import sync_playwright
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    logger.debug("playwright not installed — Browser automation unavailable")
+
 # Default region — matches config.yaml model.region
 _REGION = "us-east-1"
 
@@ -60,25 +68,32 @@ def web_browse(url: str, task: str = "extract main content", timeout: int = 30) 
     if not AGENTCORE_AVAILABLE:
         return "Error: bedrock-agentcore SDK not installed. Run: pip install bedrock-agentcore"
 
+    if not PLAYWRIGHT_AVAILABLE:
+        return (
+            "Error: playwright not installed. "
+            "Run: pip install playwright && playwright install chromium"
+        )
+
     session_id = None
     try:
         with browser_session(region=_REGION) as browser:
-            session_id = browser.start()
+            session_id = browser.session_id
             logger.info("Browser session started: %s", session_id)
 
             try:
-                result = browser.invoke("navigate", {"url": url})
-                content = browser.invoke("extract", {"task": task})
-
-                if isinstance(content, dict):
-                    return content.get("text", str(content))
-                return str(content)
-            finally:
-                try:
-                    browser.stop()
-                    logger.info("Browser session stopped: %s", session_id)
-                except Exception as cleanup_error:
-                    logger.warning("Failed to stop browser session %s: %s", session_id, cleanup_error)
+                ws_url, ws_headers = browser.generate_ws_headers()
+                with sync_playwright() as p:
+                    b = p.chromium.connect_over_cdp(ws_url, headers=ws_headers)
+                    try:
+                        page = b.contexts[0].pages[0] if b.contexts and b.contexts[0].pages else b.new_page()
+                        page.goto(url, timeout=timeout * 1000)
+                        content_text = page.content()
+                    finally:
+                        b.close()
+                return content_text[:5000] if content_text else "(no content)"
+            except Exception as inner_e:
+                logger.error("Browser automation error (session: %s): %s", session_id, inner_e)
+                return f"Error browsing {url}: {inner_e}"
 
     except Exception as e:
         error_msg = str(e)
@@ -108,7 +123,7 @@ def _get_memory_client() -> "MemoryClient":
     """Get or create the memory client singleton."""
     global _memory_client
     if _memory_client is None:
-        _memory_client = MemoryClient(region=_REGION)
+        _memory_client = MemoryClient(region_name=_REGION)
     return _memory_client
 
 
@@ -133,11 +148,23 @@ def memory_store(key: str, value: str, category: str = "general", max_retries: i
     last_error = None
     for attempt in range(max_retries + 1):
         try:
+            import uuid
             client = _get_memory_client()
-            client.add_memory(
-                namespace=category,
-                content=f"{key}: {value}",
-                metadata={"key": key, "category": category},
+            # Create or get memory store (idempotent)
+            memory_info = client.create_or_get_memory(
+                name="yui-agent-memory",
+                description="YUI Agent long-term memory store",
+            )
+            memory_id = memory_info["memoryId"]
+            actor_id = "yui-agent"
+            session_id = str(uuid.uuid4())
+            # Store as an event with the key-value as a message pair
+            client.create_event(
+                memory_id=memory_id,
+                actor_id=actor_id,
+                session_id=session_id,
+                messages=[("user", f"Remember: {key} = {value} (category: {category})")],
+                metadata={"key": {"value": key}, "category": {"value": category}},
             )
             logger.info("Memory stored: %s=%s (category: %s)", key, value[:50], category)
             return f"Stored memory '{key}' in category '{category}'"
@@ -189,9 +216,17 @@ def memory_recall(query: str, limit: int = 5, max_retries: int = 2) -> str:
     for attempt in range(max_retries + 1):
         try:
             client = _get_memory_client()
-            results = client.search_memory(
+            # Create or get memory store (idempotent)
+            memory_info = client.create_or_get_memory(
+                name="yui-agent-memory",
+                description="YUI Agent long-term memory store",
+            )
+            memory_id = memory_info["memoryId"]
+            results = client.retrieve_memories(
+                memory_id=memory_id,
+                namespace="DEFAULT",
                 query=query,
-                max_results=limit,
+                top_k=limit,
             )
 
             if not results:
@@ -199,9 +234,13 @@ def memory_recall(query: str, limit: int = 5, max_retries: int = 2) -> str:
 
             output_lines = [f"Found {len(results)} memories for '{query}':"]
             for i, result in enumerate(results, 1):
-                content = result.get("content", str(result))
+                mem_content = result.get("content", {})
+                if isinstance(mem_content, dict):
+                    text = mem_content.get("text", str(result))
+                else:
+                    text = str(mem_content)
                 score = result.get("score", "N/A")
-                output_lines.append(f"  {i}. [{score}] {content}")
+                output_lines.append(f"  {i}. [{score}] {text}")
 
             return "\n".join(output_lines)
 
@@ -417,7 +456,7 @@ def web_search(query: str, num_results: int = 10, timeout: int = 30) -> str:
     if not AGENTCORE_AVAILABLE:
         return "Error: bedrock-agentcore SDK not installed. Run: pip install bedrock-agentcore"
 
-    # Validate query
+    # Validate query (before playwright check so unit tests work without playwright)
     if not query or not query.strip():
         return "Error: Search query cannot be empty"
     
@@ -425,34 +464,39 @@ def web_search(query: str, num_results: int = 10, timeout: int = 30) -> str:
     if not isinstance(num_results, int) or num_results < 1 or num_results > 100:
         return f"Error: num_results must be an integer between 1 and 100, got: {num_results}"
 
+    if not PLAYWRIGHT_AVAILABLE:
+        return (
+            "Error: playwright not installed. "
+            "Run: pip install playwright && playwright install chromium"
+        )
+
     session_id = None
     try:
         encoded_query = urllib.parse.quote_plus(query.strip())
         search_url = f"https://www.google.com/search?q={encoded_query}&num={num_results}"
         
         with browser_session(region=_REGION) as browser:
-            session_id = browser.start()
+            session_id = browser.session_id
             logger.info("Browser session started for search: %s", session_id)
 
             try:
-                browser.invoke("navigate", {"url": search_url})
-                result = browser.invoke("extract", {"task": "extract search results with titles and snippets"})
-
-                if isinstance(result, dict):
-                    content = result.get("text", str(result))
-                else:
-                    content = str(result)
+                ws_url, ws_headers = browser.generate_ws_headers()
+                with sync_playwright() as p:
+                    b = p.chromium.connect_over_cdp(ws_url, headers=ws_headers)
+                    try:
+                        page = b.contexts[0].pages[0] if b.contexts and b.contexts[0].pages else b.new_page()
+                        page.goto(search_url, timeout=timeout * 1000)
+                        search_content = page.content()
+                    finally:
+                        b.close()
                 
-                if not content.strip():
+                if not search_content or not search_content.strip():
                     return f"No search results found for query: {query}"
                 
-                return f"Web search results for '{query}':\n{content}"
-            finally:
-                try:
-                    browser.stop()
-                    logger.info("Browser session stopped: %s", session_id)
-                except Exception as cleanup_error:
-                    logger.warning("Failed to stop browser session %s: %s", session_id, cleanup_error)
+                return f"Web search results for '{query}':\n{search_content[:5000]}"
+            except Exception as inner_e:
+                logger.error("Web search automation error (session: %s): %s", session_id, inner_e)
+                return f"Error performing web search: {inner_e}"
 
     except Exception as e:
         error_msg = str(e)

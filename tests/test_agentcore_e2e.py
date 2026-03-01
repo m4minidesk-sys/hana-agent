@@ -15,6 +15,19 @@ import pytest
 
 from yui.tools.agentcore import code_execute, memory_recall, memory_store, web_browse
 
+# Check playwright availability for Browser tests
+try:
+    from playwright.sync_api import sync_playwright
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+
+# Additional skipif for browser tests that require playwright
+_browser_skip = pytest.mark.skipif(
+    not PLAYWRIGHT_AVAILABLE,
+    reason="Browser E2E tests require playwright: pip install playwright && playwright install chromium"
+)
+
 
 # Skip all tests unless AWS E2E testing is explicitly enabled
 pytestmark = [
@@ -29,6 +42,7 @@ pytestmark = [
 class TestAgentCoreBrowserE2E:
     """Issue #50: AgentCore Browser real E2E tests."""
 
+    @_browser_skip
     @pytest.mark.aws
     def test_browser_session_creation(self):
         """Test real AgentCore Browser session creation and basic functionality."""
@@ -36,6 +50,7 @@ class TestAgentCoreBrowserE2E:
         assert "Error" not in result
         assert "httpbin" in result.lower() or "get" in result.lower()
 
+    @_browser_skip
     @pytest.mark.aws
     def test_url_navigation_content_extraction(self):
         """Test URL navigation and content extraction from a simple page."""
@@ -46,6 +61,7 @@ class TestAgentCoreBrowserE2E:
         assert "Error" not in result
         assert "example" in result.lower()
 
+    @_browser_skip
     @pytest.mark.aws
     def test_javascript_rendering_page(self):
         """Test JavaScript rendering capability with a JS-heavy page."""
@@ -57,6 +73,7 @@ class TestAgentCoreBrowserE2E:
         # Should be able to see JSON content after JS rendering
         assert any(char in result for char in ["{", "}", "[", "]"])
 
+    @_browser_skip
     @pytest.mark.aws
     def test_session_timeout_cleanup(self):
         """Test that browser sessions are properly cleaned up."""
@@ -69,6 +86,7 @@ class TestAgentCoreBrowserE2E:
             assert "Error" not in result
         # If sessions are properly cleaned up, this should work without issues
 
+    @_browser_skip
     @pytest.mark.aws
     def test_concurrent_session_limit(self):
         """Test concurrent browser session handling and limits."""
@@ -93,6 +111,7 @@ class TestAgentCoreBrowserE2E:
         successful_results = [r for r in results if "Error" not in r and "Timeout" not in r]
         assert len(successful_results) >= 1
 
+    @_browser_skip
     @pytest.mark.aws
     def test_https_ssl_handling(self):
         """Test HTTPS/SSL certificate handling."""
@@ -103,6 +122,7 @@ class TestAgentCoreBrowserE2E:
         assert "Error" not in result
         # Should handle HTTPS without SSL errors
 
+    @_browser_skip
     @pytest.mark.aws
     def test_large_page_content(self):
         """Test handling of large page content."""
@@ -113,6 +133,7 @@ class TestAgentCoreBrowserE2E:
         assert "Error" not in result
         assert len(result) > 100  # Should get substantial content
 
+    @_browser_skip
     @pytest.mark.aws
     def test_redirect_handling(self):
         """Test HTTP redirect handling."""
