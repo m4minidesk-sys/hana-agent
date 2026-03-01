@@ -417,38 +417,19 @@ class TestAWSIntegrationMocked:
 
 # ──────────────────────────────────────────────
 # Issue #74: 異常系・境界値テスト追加
+
+
+# ──────────────────────────────────────────────
+# Issue #74: 異常系・境界値テスト追加
 # ──────────────────────────────────────────────
 
 class TestCFnValidationNegative:
-    """Issue #74: 不正テンプレートの異常系テスト"""
+    """Issue #74: 不正テンプレート・APIエラーの異常系テスト（mockedで実際のAPIを呼ぶ）"""
 
     pytestmark = pytest.mark.unit
 
-    def test_missing_required_resources_key(self):
-        """Resources キーが欠落したテンプレートは不正。"""
-        invalid_template = {
-            "AWSTemplateFormatVersion": "2010-09-09",
-            "Description": "Missing Resources",
-            # "Resources" key intentionally omitted
-        }
-        assert "Resources" not in invalid_template, "Template should be missing Resources"
-
-    def test_empty_resources_section(self):
-        """Resources が空のテンプレートはリソースなし。"""
-        invalid_template = {
-            "AWSTemplateFormatVersion": "2010-09-09",
-            "Resources": {}
-        }
-        assert len(invalid_template["Resources"]) == 0
-
-    def test_invalid_template_format_version(self):
-        """不正な AWSTemplateFormatVersion は検出可能。"""
-        VALID_VERSION = "2010-09-09"
-        invalid_version = "2099-99-99"
-        assert invalid_version != VALID_VERSION
-
     def test_validate_template_mocked__missing_resources__raises_client_error(self):
-        """Resources なしのテンプレートはCloudFormation validateで ClientError。"""
+        """Resources なしのテンプレートはCloudFormation validateで ValidationError。"""
         from botocore.exceptions import ClientError
 
         mock_client = MagicMock()
@@ -462,9 +443,10 @@ class TestCFnValidationNegative:
             with pytest.raises(ClientError) as exc_info:
                 client.validate_template(TemplateBody="{}")
             assert "ValidationError" in str(exc_info.value)
+            assert "Resources" in str(exc_info.value)
 
     def test_validate_template_mocked__invalid_yaml__raises_client_error(self):
-        """YAML構文エラーのテンプレートはCloudFormation validateで ClientError。"""
+        """YAML構文エラーのテンプレートはCloudFormation validateで ValidationError。"""
         from botocore.exceptions import ClientError
 
         mock_client = MagicMock()
@@ -478,14 +460,15 @@ class TestCFnValidationNegative:
             with pytest.raises(ClientError) as exc_info:
                 client.validate_template(TemplateBody=": invalid: yaml: {{{{")
             assert "ValidationError" in str(exc_info.value)
+            assert "YAML" in str(exc_info.value)
 
     def test_validate_template_mocked__access_denied__raises_client_error(self):
-        """CFn APIアクセス拒否は AccessDeniedException。"""
+        """CFn APIアクセス拒否はAccessDeniedException（IAM権限不足）。"""
         from botocore.exceptions import ClientError
 
         mock_client = MagicMock()
         mock_client.validate_template.side_effect = ClientError(
-            {"Error": {"Code": "AccessDeniedException", "Message": "User not authorized"}},
+            {"Error": {"Code": "AccessDeniedException", "Message": "User not authorized to perform: cloudformation:ValidateTemplate"}},
             "ValidateTemplate"
         )
 
@@ -495,26 +478,39 @@ class TestCFnValidationNegative:
                 client.validate_template(TemplateBody="...")
             assert "AccessDeniedException" in str(exc_info.value)
 
-    def test_parameter_missing_allowed_values(self, cfn_template=None):
-        """パラメーター定義に AllowedValues がない場合は任意入力を許容する。"""
-        # A parameter without AllowedValues accepts any value
-        param_without_constraints = {
-            "Type": "String",
-            "Description": "Unconstrained parameter"
-        }
-        assert "AllowedValues" not in param_without_constraints
-        # This is valid CFn syntax but potentially risky (no input validation)
-        assert param_without_constraints["Type"] == "String"
+    def test_create_changeset_mocked__already_exists__raises_client_error(self):
+        """既存ChangeSetへの重複作成はAlreadyExistsException。"""
+        from botocore.exceptions import ClientError
 
-    def test_iam_resource_without_path_has_default_path(self):
-        """IAMリソースにPathが未設定の場合はデフォルト'/'パスが使われる。"""
-        iam_resource_without_path = {
-            "Type": "AWS::IAM::Role",
-            "Properties": {
-                "RoleName": "TestRole",
-                "AssumeRolePolicyDocument": {}
-                # "Path" intentionally omitted
-            }
-        }
-        # No Path specified — CloudFormation will default to "/"
-        assert "Path" not in iam_resource_without_path["Properties"]
+        mock_client = MagicMock()
+        mock_client.create_change_set.side_effect = ClientError(
+            {"Error": {"Code": "AlreadyExistsException", "Message": "ChangeSet already exists"}},
+            "CreateChangeSet"
+        )
+
+        with patch("boto3.client", return_value=mock_client):
+            client = boto3.client("cloudformation", region_name="us-east-1")
+            with pytest.raises(ClientError) as exc_info:
+                client.create_change_set(
+                    StackName="existing-stack",
+                    TemplateBody="...",
+                    ChangeSetName="duplicate-changeset",
+                    Capabilities=["CAPABILITY_NAMED_IAM"],
+                )
+            assert "AlreadyExistsException" in str(exc_info.value)
+
+    def test_validate_template_mocked__empty_template__raises_client_error(self):
+        """空のテンプレート文字列はCloudFormation validateで ValidationError。"""
+        from botocore.exceptions import ClientError
+
+        mock_client = MagicMock()
+        mock_client.validate_template.side_effect = ClientError(
+            {"Error": {"Code": "ValidationError", "Message": "Template format error: At least one Resources member must be defined."}},
+            "ValidateTemplate"
+        )
+
+        with patch("boto3.client", return_value=mock_client):
+            client = boto3.client("cloudformation", region_name="us-east-1")
+            with pytest.raises(ClientError) as exc_info:
+                client.validate_template(TemplateBody="")
+            assert "ValidationError" in str(exc_info.value)
