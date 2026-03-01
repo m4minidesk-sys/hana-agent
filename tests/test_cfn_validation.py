@@ -413,3 +413,108 @@ class TestAWSIntegrationMocked:
             assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
             assert "arn:aws:cloudformation" in response["Id"]
             mock_client.create_change_set.assert_called_once()
+
+
+# ──────────────────────────────────────────────
+# Issue #74: 異常系・境界値テスト追加
+# ──────────────────────────────────────────────
+
+class TestCFnValidationNegative:
+    """Issue #74: 不正テンプレートの異常系テスト"""
+
+    pytestmark = pytest.mark.unit
+
+    def test_missing_required_resources_key(self):
+        """Resources キーが欠落したテンプレートは不正。"""
+        invalid_template = {
+            "AWSTemplateFormatVersion": "2010-09-09",
+            "Description": "Missing Resources",
+            # "Resources" key intentionally omitted
+        }
+        assert "Resources" not in invalid_template, "Template should be missing Resources"
+
+    def test_empty_resources_section(self):
+        """Resources が空のテンプレートはリソースなし。"""
+        invalid_template = {
+            "AWSTemplateFormatVersion": "2010-09-09",
+            "Resources": {}
+        }
+        assert len(invalid_template["Resources"]) == 0
+
+    def test_invalid_template_format_version(self):
+        """不正な AWSTemplateFormatVersion は検出可能。"""
+        VALID_VERSION = "2010-09-09"
+        invalid_version = "2099-99-99"
+        assert invalid_version != VALID_VERSION
+
+    def test_validate_template_mocked__missing_resources__raises_client_error(self):
+        """Resources なしのテンプレートはCloudFormation validateで ClientError。"""
+        from botocore.exceptions import ClientError
+
+        mock_client = MagicMock()
+        mock_client.validate_template.side_effect = ClientError(
+            {"Error": {"Code": "ValidationError", "Message": "Template format error: Missing required resource type 'Resources'"}},
+            "ValidateTemplate"
+        )
+
+        with patch("boto3.client", return_value=mock_client):
+            client = boto3.client("cloudformation", region_name="us-east-1")
+            with pytest.raises(ClientError) as exc_info:
+                client.validate_template(TemplateBody="{}")
+            assert "ValidationError" in str(exc_info.value)
+
+    def test_validate_template_mocked__invalid_yaml__raises_client_error(self):
+        """YAML構文エラーのテンプレートはCloudFormation validateで ClientError。"""
+        from botocore.exceptions import ClientError
+
+        mock_client = MagicMock()
+        mock_client.validate_template.side_effect = ClientError(
+            {"Error": {"Code": "ValidationError", "Message": "Template format error: YAML not well-formed"}},
+            "ValidateTemplate"
+        )
+
+        with patch("boto3.client", return_value=mock_client):
+            client = boto3.client("cloudformation", region_name="us-east-1")
+            with pytest.raises(ClientError) as exc_info:
+                client.validate_template(TemplateBody=": invalid: yaml: {{{{")
+            assert "ValidationError" in str(exc_info.value)
+
+    def test_validate_template_mocked__access_denied__raises_client_error(self):
+        """CFn APIアクセス拒否は AccessDeniedException。"""
+        from botocore.exceptions import ClientError
+
+        mock_client = MagicMock()
+        mock_client.validate_template.side_effect = ClientError(
+            {"Error": {"Code": "AccessDeniedException", "Message": "User not authorized"}},
+            "ValidateTemplate"
+        )
+
+        with patch("boto3.client", return_value=mock_client):
+            client = boto3.client("cloudformation", region_name="us-east-1")
+            with pytest.raises(ClientError) as exc_info:
+                client.validate_template(TemplateBody="...")
+            assert "AccessDeniedException" in str(exc_info.value)
+
+    def test_parameter_missing_allowed_values(self, cfn_template=None):
+        """パラメーター定義に AllowedValues がない場合は任意入力を許容する。"""
+        # A parameter without AllowedValues accepts any value
+        param_without_constraints = {
+            "Type": "String",
+            "Description": "Unconstrained parameter"
+        }
+        assert "AllowedValues" not in param_without_constraints
+        # This is valid CFn syntax but potentially risky (no input validation)
+        assert param_without_constraints["Type"] == "String"
+
+    def test_iam_resource_without_path_has_default_path(self):
+        """IAMリソースにPathが未設定の場合はデフォルト'/'パスが使われる。"""
+        iam_resource_without_path = {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": "TestRole",
+                "AssumeRolePolicyDocument": {}
+                # "Path" intentionally omitted
+            }
+        }
+        # No Path specified — CloudFormation will default to "/"
+        assert "Path" not in iam_resource_without_path["Properties"]

@@ -67,7 +67,16 @@ class SessionManager:
         Args:
             session_id: Unique session identifier.
             metadata: Optional metadata (channel, user, etc.).
+
+        Raises:
+            ValueError: If session_id is empty or None.
         """
+        if session_id is None:
+            raise ValueError("session_id cannot be None")
+        if not isinstance(session_id, str):
+            raise TypeError(f"session_id must be a string, got {type(session_id).__name__}")
+        if not session_id.strip():
+            raise ValueError("session_id cannot be empty")
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("SELECT session_id FROM sessions WHERE session_id = ?", (session_id,))
             if cursor.fetchone() is None:
@@ -85,8 +94,14 @@ class SessionManager:
             session_id: Session identifier.
             role: Message role (user, assistant, system, tool_use, tool_result).
             content: Message content (JSON-encoded for structured messages).
+
+        Raises:
+            ValueError: If session_id does not exist.
         """
         with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("SELECT session_id FROM sessions WHERE session_id = ?", (session_id,))
+            if cursor.fetchone() is None:
+                raise ValueError(f"Session '{session_id}' does not exist. Call get_or_create_session first.")
             conn.execute(
                 "INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)",
                 (session_id, role, content),
