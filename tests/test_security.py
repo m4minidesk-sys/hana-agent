@@ -122,18 +122,20 @@ class TestPathTraversal:
         """cat ../../../../etc/passwd — basic path traversal."""
         mock_run.return_value = MagicMock(stdout="", stderr="", returncode=0)
         # cat IS in allowlist, and path traversal is not in blocklist
-        # This documents that safe_shell relies on OS-level permissions
+        # Issue #58 修正: safe_shell が ../ パターンを検出してブロックするようになった
         result = shell(command="cat ../../../../etc/passwd")
-        # The command executes because "cat" is allowed
-        # Path traversal protection is OS-level, not in safe_shell
-        mock_run.assert_called_once()
+        # CWE-22: ../ traversal is now blocked by safe_shell (no longer OS-level only)
+        assert "Error" in result, f"Path traversal should be blocked, got: {result}"
+        mock_run.assert_not_called()
 
     @patch("subprocess.run")
     def test_ls_ssh_keys_traversal(self, mock_run, shell):
-        """ls ../../../.ssh/ — traversal to SSH keys."""
+        """ls ../../../.ssh/ — traversal to SSH keys. Issue #58: now blocked."""
         mock_run.return_value = MagicMock(stdout="", stderr="", returncode=0)
         result = shell(command="ls ../../../.ssh/")
-        mock_run.assert_called_once()
+        # CWE-22: ../ traversal is now blocked by safe_shell
+        assert "Error" in result, f"Path traversal should be blocked, got: {result}"
+        mock_run.assert_not_called()
 
 
 # --- Environment Variable Injection ---
