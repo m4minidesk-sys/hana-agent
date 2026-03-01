@@ -295,9 +295,21 @@ class TestBlocklistEdgeCases:
     def test_empty_command_is_rejected(self, shell):
         """空コマンドはエラー。"""
         result = shell("")
-        assert "Error" in result
+        assert "Error" in result, f"Empty command should be rejected, got: {result}"
 
     def test_whitespace_only_command_is_rejected(self, shell):
         """空白のみのコマンドはエラー。"""
         result = shell("   ")
-        assert "Error" in result
+        assert "Error" in result, f"Whitespace-only command should be rejected, got: {result}"
+
+    def test_home_env_var_in_command_is_blocked(self, shell):
+        """`$HOME` 環境変数展開をブロック（意図的仕様）。
+
+        Issue #58: $HOMEを含むコマンドは CWE-22 チェックでブロックされる。
+        これは意図的な設計 — 環境変数展開は shell=True 実行時に
+        任意パスを指定する攻撃ベクターになり得るため全てブロックする。
+        通常のホームディレクトリアクセスは絶対パス（/home/user/）で代替可能。
+        """
+        result = shell("ls $HOME/Documents")
+        assert "Error" in result, f"$HOME expansion should be blocked, got: {result}"
+        assert "path" in result.lower() or "traversal" in result.lower() or "sensitive" in result.lower(),             f"Should indicate path/traversal error, got: {result}"
