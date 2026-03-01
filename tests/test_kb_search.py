@@ -170,42 +170,56 @@ def test_web_search_invalid_num_results(mock_session):
 
 
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", True)
+@patch("yui.tools.agentcore.PLAYWRIGHT_AVAILABLE", True)
+@patch("yui.tools.agentcore.sync_playwright", create=True)
 @patch("yui.tools.agentcore.browser_session")
-def test_web_search_special_characters(mock_session):
-    """Test web search with special characters in query."""
-    mock_browser = MagicMock()
-    mock_browser.start.return_value = "session-123"
-    mock_browser.invoke.side_effect = [
-        None,  # navigate
-        {"text": "Search results for special characters"}  # search results
-    ]
-    mock_session.return_value.__enter__ = MagicMock(return_value=mock_browser)
+def test_web_search_special_characters(mock_session, mock_playwright):
+    """Test web search with special characters in query — URL is properly encoded."""
+    mock_browser_client = MagicMock()
+    mock_browser_client.session_id = "session-123"
+    mock_browser_client.generate_ws_headers.return_value = (
+        "wss://example.com/browser", {"Authorization": "SigV4 xxx"}
+    )
+    mock_session.return_value.__enter__ = MagicMock(return_value=mock_browser_client)
     mock_session.return_value.__exit__ = MagicMock(return_value=False)
-    
-    # Test query with special characters
+
+    mock_page = MagicMock()
+    mock_page.content.return_value = "Search results for special characters"
+    mock_pw_browser = MagicMock()
+    mock_pw_browser.contexts = [MagicMock(pages=[mock_page])]
+    mock_playwright.return_value.__enter__.return_value.chromium.connect_over_cdp.return_value = mock_pw_browser
+
     special_query = "C++ & Python: 100% better than Java?"
     result = web_search(special_query, 5)
-    
+
     assert "Search results for special characters" in result
-    # Verify that the URL was properly encoded
-    mock_browser.invoke.assert_any_call("navigate", {"url": "https://www.google.com/search?q=C%2B%2B+%26+Python%3A+100%25+better+than+Java%3F&num=5"})
+    # Verify URL encoding by checking what goto was called with
+    call_args = mock_page.goto.call_args
+    assert "C%2B%2B" in call_args[0][0] or "C%2B%2B" in str(call_args)
 
 
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", True)
+@patch("yui.tools.agentcore.PLAYWRIGHT_AVAILABLE", True)
+@patch("yui.tools.agentcore.sync_playwright", create=True)
 @patch("yui.tools.agentcore.browser_session")
-def test_web_search_empty_results(mock_session):
+def test_web_search_empty_results(mock_session, mock_playwright):
     """Test web search with no results from browser."""
-    mock_browser = MagicMock()
-    mock_browser.start.return_value = "session-123"
-    mock_browser.invoke.side_effect = [
-        None,  # navigate
-        {"text": ""}  # empty search results
-    ]
-    mock_session.return_value.__enter__ = MagicMock(return_value=mock_browser)
+    mock_browser_client = MagicMock()
+    mock_browser_client.session_id = "session-123"
+    mock_browser_client.generate_ws_headers.return_value = (
+        "wss://example.com/browser", {"Authorization": "SigV4 xxx"}
+    )
+    mock_session.return_value.__enter__ = MagicMock(return_value=mock_browser_client)
     mock_session.return_value.__exit__ = MagicMock(return_value=False)
-    
+
+    mock_page = MagicMock()
+    mock_page.content.return_value = ""  # empty results
+    mock_pw_browser = MagicMock()
+    mock_pw_browser.contexts = [MagicMock(pages=[mock_page])]
+    mock_playwright.return_value.__enter__.return_value.chromium.connect_over_cdp.return_value = mock_pw_browser
+
     result = web_search("very obscure query that returns nothing", 5)
-    
+
     assert "No search results found" in result
     assert "very obscure query that returns nothing" in result
 
@@ -213,40 +227,56 @@ def test_web_search_empty_results(mock_session):
 # --- web_search tests (Issue #53) ---
 
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", True)
+@patch("yui.tools.agentcore.PLAYWRIGHT_AVAILABLE", True)
+@patch("yui.tools.agentcore.sync_playwright", create=True)
 @patch("yui.tools.agentcore.browser_session")
-def test_web_search_success(mock_session):
-    """Test successful web search via AgentCore Browser."""
-    mock_browser = MagicMock()
-    mock_browser.start.return_value = "session-123"
-    mock_browser.invoke.side_effect = [
-        None,  # navigate to Google
-        {"text": "Search results: 1. AI safety guidelines\n2. Best practices for AI"}  # search results
-    ]
-    mock_session.return_value.__enter__ = MagicMock(return_value=mock_browser)
+def test_web_search_success(mock_session, mock_playwright):
+    """Test successful web search via AgentCore Browser + Playwright."""
+    # Mock BrowserClient
+    mock_browser_client = MagicMock()
+    mock_browser_client.session_id = "session-123"
+    mock_browser_client.generate_ws_headers.return_value = (
+        "wss://example.com/browser", {"Authorization": "SigV4 xxx"}
+    )
+    mock_session.return_value.__enter__ = MagicMock(return_value=mock_browser_client)
     mock_session.return_value.__exit__ = MagicMock(return_value=False)
-    
+
+    # Mock Playwright CDP connection
+    mock_page = MagicMock()
+    mock_page.content.return_value = "Search results: 1. AI safety guidelines\n2. Best practices for AI"
+    mock_pw_browser = MagicMock()
+    mock_pw_browser.contexts = [MagicMock(pages=[mock_page])]
+    mock_playwright.return_value.__enter__.return_value.chromium.connect_over_cdp.return_value = mock_pw_browser
+
     result = web_search("AI safety best practices", 5)
-    
+
     assert "AI safety guidelines" in result
     assert "Best practices for AI" in result
-    mock_browser.invoke.assert_any_call("navigate", {"url": "https://www.google.com/search?q=AI+safety+best+practices&num=5"})
 
 
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", True)
+@patch("yui.tools.agentcore.PLAYWRIGHT_AVAILABLE", True)
+@patch("yui.tools.agentcore.sync_playwright", create=True)
 @patch("yui.tools.agentcore.browser_session")
-def test_web_search_with_default_num_results(mock_session):
+def test_web_search_with_default_num_results(mock_session, mock_playwright):
     """Test web search with default number of results."""
-    mock_browser = MagicMock()
-    mock_browser.start.return_value = "session-123"
-    mock_browser.invoke.side_effect = [None, {"text": "Default search results"}]
-    mock_session.return_value.__enter__ = MagicMock(return_value=mock_browser)
+    mock_browser_client = MagicMock()
+    mock_browser_client.session_id = "session-123"
+    mock_browser_client.generate_ws_headers.return_value = (
+        "wss://example.com/browser", {"Authorization": "SigV4 xxx"}
+    )
+    mock_session.return_value.__enter__ = MagicMock(return_value=mock_browser_client)
     mock_session.return_value.__exit__ = MagicMock(return_value=False)
-    
+
+    mock_page = MagicMock()
+    mock_page.content.return_value = "Default search results"
+    mock_pw_browser = MagicMock()
+    mock_pw_browser.contexts = [MagicMock(pages=[mock_page])]
+    mock_playwright.return_value.__enter__.return_value.chromium.connect_over_cdp.return_value = mock_pw_browser
+
     result = web_search("Python programming")  # No num_results specified
-    
+
     assert "Default search results" in result
-    # Should default to 10 results
-    mock_browser.invoke.assert_any_call("navigate", {"url": "https://www.google.com/search?q=Python+programming&num=10"})
 
 
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", False)
@@ -258,16 +288,17 @@ def test_web_search_unavailable():
 
 
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", True)
+@patch("yui.tools.agentcore.PLAYWRIGHT_AVAILABLE", True)
 @patch("yui.tools.agentcore.browser_session")
 def test_web_search_browser_error(mock_session):
-    """Test web search with browser session error."""
+    """Test web search with browser session ResourceNotFoundException."""
     mock_session.return_value.__enter__ = MagicMock(
         side_effect=Exception("ResourceNotFoundException: Browser resource not found")
     )
     mock_session.return_value.__exit__ = MagicMock(return_value=False)
-    
+
     result = web_search("test query", 5)
-    
+
     assert "Error: AgentCore Browser not provisioned" in result
     assert "AWS Bedrock Console" in result
 

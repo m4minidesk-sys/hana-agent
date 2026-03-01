@@ -437,7 +437,7 @@ class TestConverseE2E:
 
     @pytest.mark.aws 
     def test_real_invalid_model(self):
-        """E2E test: Real invalid model handling."""
+        """E2E test: Real invalid model handling — creates agent then invokes it."""
         import os
         if not os.environ.get("YUI_AWS_E2E"):
             pytest.skip("YUI_AWS_E2E not set")
@@ -446,8 +446,10 @@ class TestConverseE2E:
         config["model"]["model_id"] = "anthropic.claude-nonexistent-v1:0"
         
         try:
+            # create_agent only builds the agent object; the error is raised on invocation
+            agent = create_agent(config)
             with pytest.raises((ClientError, Exception)):
-                create_agent(config)
+                agent("Hello")  # This triggers the actual Bedrock API call
         except Exception as e:
             if "credentials" in str(e).lower():
                 pytest.skip("AWS credentials not configured")
