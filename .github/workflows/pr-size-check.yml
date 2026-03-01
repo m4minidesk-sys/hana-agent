@@ -1,0 +1,24 @@
+name: PR Size Check
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+jobs:
+  pr-size-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check PR size
+        run: |
+          BASE="${{ github.base_ref }}"
+          git fetch origin "$BASE"
+          LINES=$(git diff --numstat "origin/$BASE" | awk '{sum+=$1+$2} END {print sum+0}')
+          FILES=$(git diff --name-only "origin/$BASE" | wc -l | tr -d ' ')
+          if [ "$LINES" -gt 200 ] || [ "$FILES" -gt 5 ]; then
+            echo "::error::PRサイズ超過: ${LINES}行/${FILES}ファイル"
+            exit 1
+          elif [ "$LINES" -gt 100 ]; then
+            echo "::warning::PR大きめ: ${LINES}行"
+          fi
+          echo "✅ ${LINES}行/${FILES}ファイル"
