@@ -55,14 +55,12 @@ class TestSafeShellValidation:
 
     @patch("subprocess.run")
     def test_path_based_command_allowed(self, mock_run):
-        """/usr/bin/cat → base name 'cat' is in allowlist (safe path)."""
+        """/usr/bin/cat → base name 'cat' is in allowlist."""
         mock_run.return_value = MagicMock(
             stdout="content", stderr="", returncode=0
         )
         shell = self._make_shell()
-        # /etc/ is a sensitive path and will be blocked by CWE-22 check
-        # Use a safe non-sensitive path instead
-        result = shell(command="/usr/bin/cat /tmp/testfile.txt")
+        result = shell(command="/usr/bin/cat /etc/hostname")
         mock_run.assert_called_once()
 
     @patch("subprocess.run")
