@@ -1,5 +1,6 @@
 """Tests for Knowledge Base RAG and Web Search tools — Issue #48 & #53."""
 
+import os
 from unittest.mock import MagicMock, patch
 import pytest
 import boto3
@@ -328,10 +329,18 @@ def test_kb_retrieve_e2e():
 @pytest.mark.aws
 @pytest.mark.skipif(not AWS_AVAILABLE, reason="boto3 not installed")
 @patch("yui.tools.agentcore.AGENTCORE_AVAILABLE", True)
+@pytest.mark.skipif(
+    not os.getenv("YUI_AWS_E2E"),
+    reason="Requires YUI_AWS_E2E=1 and real AgentCore Browser provisioning"
+)
 def test_web_search_e2e():
-    """E2E test for web search with real AgentCore Browser."""
-    # This will only run if:
-    # 1. AWS credentials are configured
-    # 2. AgentCore Browser is provisioned
-    # 3. Test is explicitly run with --aws flag
-    pytest.skip("E2E test — requires real AgentCore Browser provisioning")
+    """E2E test for web search with real AgentCore Browser.
+
+    Issue #73: 無条件 pytest.skip() → 環境変数による条件付きskipに変更。
+    YUI_AWS_E2E=1 を設定することで実際のAgentCore Browserに対してテストを実行する。
+    """
+    from yui.tools.agentcore import web_search
+    result = web_search(query="AWS Bedrock AgentCore", num_results=3)
+    assert isinstance(result, str)
+    assert len(result) > 0
+    assert "Error" not in result, f"Expected search results, got error: {result}"

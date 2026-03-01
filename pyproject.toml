@@ -93,6 +93,9 @@ filterwarnings = [
     "ignore::PendingDeprecationWarning:bedrock_agentcore",
     "ignore::DeprecationWarning:pydantic",
 ]
+# Issue #73: skip有効性の定義
+# skip = "未検証" (not "成功"). skipは必ずreason付きで記録すること.
+# skip率 >10%: conftest.pytest_terminal_summary で警告表示
 markers = [
     "aws: marks tests as requiring AWS credentials and Bedrock access (deselect with '-m \"not aws\"')",
     "unit: Unit tests - test individual functions/classes in isolation",

@@ -201,3 +201,35 @@ def tmp_workspace(tmp_path):
     (workspace / "AGENTS.md").write_text("# Test AGENTS")
     (workspace / "SOUL.md").write_text("# Test SOUL")
     return workspace
+
+
+# ---------------------------------------------------------------------------
+# Issue #73: テスト有効性の可視化（skip率監視）
+# ---------------------------------------------------------------------------
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    """Skip率が閾値を超えた場合に警告を表示する。
+
+    Issue #73: skipをsilentに成功扱いする設計思想の問題を可視化する。
+    skipは「未検証」であり「成功」ではない。
+    閾値: skip/(pass+skip) > 10% で警告
+    """
+    passed = len(terminalreporter.stats.get("passed", []))
+    skipped = len(terminalreporter.stats.get("skipped", []))
+    total = passed + skipped
+
+    if total > 0 and skipped > 0:
+        skip_ratio = skipped / total
+        terminalreporter.write_sep("-", "skip ratio report")
+        terminalreporter.write_line(
+            f"⚠️  SKIP RATIO: {skipped}/{total} tests skipped ({skip_ratio:.1%})"
+        )
+        if skip_ratio > 0.10:
+            terminalreporter.write_line(
+                "    > 10% threshold exceeded — review skip reasons and ensure test resources exist."
+            )
+            terminalreporter.write_line(
+                "    Set env vars (YUI_AWS_E2E=1, YUI_TEST_AWS=1, YUI_TEST_SLACK=1) to reduce skips."
+            )
+        else:
+            terminalreporter.write_line("    Within acceptable threshold (<=10%).")
