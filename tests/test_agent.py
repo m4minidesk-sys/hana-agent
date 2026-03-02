@@ -37,9 +37,23 @@ class TestSystemPrompt:
         assert "I am Yui" in prompt
 
     def test_missing_both(self, tmp_path):
-        """Both missing → empty string (no crash)."""
+        """Both missing → falls back to DEFAULT_SYSTEM_PROMPT (no crash, no empty string)."""
+        from yui.agent import DEFAULT_SYSTEM_PROMPT
         prompt = _load_system_prompt(tmp_path)
-        assert prompt == ""
+        assert prompt == DEFAULT_SYSTEM_PROMPT
+
+    def test_load_system_prompt_empty_returns_default(self, tmp_path):
+        """Both AGENTS.md and SOUL.md absent → returns DEFAULT_SYSTEM_PROMPT (Issue #95)."""
+        from yui.agent import DEFAULT_SYSTEM_PROMPT
+        prompt = _load_system_prompt(tmp_path)
+        assert prompt == DEFAULT_SYSTEM_PROMPT
+        assert prompt == "You are Yui, a helpful AI assistant."
+
+    def test_load_system_prompt_empty_not_empty_string(self, tmp_path):
+        """Both files absent → must NOT return empty string (Issue #95 regression guard)."""
+        prompt = _load_system_prompt(tmp_path)
+        assert prompt != ""
+        assert len(prompt) > 0
 
 
 class TestCreateAgent:
