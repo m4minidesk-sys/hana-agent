@@ -156,6 +156,13 @@ python scripts/check_mock_drift.py --api bedrock --dry-run
 python scripts/check_mock_drift.py --create-issue
 ```
 
+
+## Testing
+
+See [docs/testing-philosophy.md](docs/testing-philosophy.md) for the full testing strategy:
+mock vs real API の判断基準、テスト種別定義（unit/component/integration/e2e/live）、
+既存テストのカテゴリ対応表。
+
 ## Phase Roadmap
 
 | Phase | Scope | Timeline |
