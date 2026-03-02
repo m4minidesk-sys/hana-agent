@@ -175,8 +175,10 @@ class TestIT01MentionResponse:
         assert result["ok"]
         sent_ts = result["ts"]
         
-        # Wait for Yui's response
-        responses = wait_for_yui_response(YUI_TEST_CHANNEL, sent_ts)
+        # Wait for Yui's response.
+        # thread_ts=sent_ts is required because Yui replies in-thread;
+        # conversations_history does not include thread replies, so we use conversations_replies.
+        responses = wait_for_yui_response(YUI_TEST_CHANNEL, sent_ts, thread_ts=sent_ts)
         
         assert len(responses) > 0, f"Yui did not respond within {MAX_WAIT}s"
         assert len(responses[0].get("text", "")) > 0, "Yui response was empty"
@@ -219,7 +221,7 @@ class TestIT03ThreadContinuity:
         thread_ts = result1["ts"]
         
         # Wait for first response
-        responses1 = wait_for_yui_response(YUI_TEST_CHANNEL, thread_ts)
+        responses1 = wait_for_yui_response(YUI_TEST_CHANNEL, thread_ts, thread_ts=thread_ts)
         assert len(responses1) > 0, "Yui did not respond to first message"
         
         # Follow up in thread
@@ -257,7 +259,7 @@ class TestIT04SafeShellExecution:
         assert result["ok"]
         sent_ts = result["ts"]
         
-        responses = wait_for_yui_response(YUI_TEST_CHANNEL, sent_ts)
+        responses = wait_for_yui_response(YUI_TEST_CHANNEL, sent_ts, thread_ts=sent_ts)
         assert len(responses) > 0, "Yui did not respond"
         
         response_text = responses[0].get("text", "")
@@ -280,7 +282,7 @@ class TestIT05FileOperation:
         assert result["ok"]
         sent_ts = result["ts"]
         
-        responses = wait_for_yui_response(YUI_TEST_CHANNEL, sent_ts)
+        responses = wait_for_yui_response(YUI_TEST_CHANNEL, sent_ts, thread_ts=sent_ts)
         assert len(responses) > 0, "Yui did not respond"
         
         # Yui should confirm file was written
@@ -303,7 +305,7 @@ class TestIT06BlockedCommand:
         assert result["ok"]
         sent_ts = result["ts"]
         
-        responses = wait_for_yui_response(YUI_TEST_CHANNEL, sent_ts)
+        responses = wait_for_yui_response(YUI_TEST_CHANNEL, sent_ts, thread_ts=sent_ts)
         assert len(responses) > 0, "Yui did not respond"
         
         response_text = responses[0].get("text", "").lower()
@@ -333,7 +335,7 @@ class TestIT07SessionMemory:
         assert result1["ok"]
         thread_ts = result1["ts"]
         
-        responses1 = wait_for_yui_response(YUI_TEST_CHANNEL, thread_ts)
+        responses1 = wait_for_yui_response(YUI_TEST_CHANNEL, thread_ts, thread_ts=thread_ts)
         assert len(responses1) > 0, "Yui did not respond to first message"
         
         # Follow up — ask Yui to recall
@@ -374,7 +376,7 @@ class TestIT08LargeInput:
         assert result["ok"]
         sent_ts = result["ts"]
         
-        responses = wait_for_yui_response(YUI_TEST_CHANNEL, sent_ts)
+        responses = wait_for_yui_response(YUI_TEST_CHANNEL, sent_ts, thread_ts=sent_ts)
         assert len(responses) > 0, "Yui did not respond to large input"
 
 
@@ -396,8 +398,9 @@ class TestIT09KiroDelegation:
         assert result["ok"]
         sent_ts = result["ts"]
         
-        # Kiro delegation takes longer
-        responses = wait_for_yui_response(YUI_TEST_CHANNEL, sent_ts, max_wait=180)
+        # Kiro delegation takes longer.
+        # thread_ts=sent_ts: Yui replies in-thread, use conversations_replies to detect response.
+        responses = wait_for_yui_response(YUI_TEST_CHANNEL, sent_ts, thread_ts=sent_ts, max_wait=180)
         assert len(responses) > 0, "Yui did not respond (Kiro delegation may have timed out)"
         
         response_text = responses[0].get("text", "")
