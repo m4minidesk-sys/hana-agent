@@ -175,7 +175,9 @@ class TestIT01MentionResponse:
         assert result["ok"]
         sent_ts = result["ts"]
         
-        # Wait for Yui's response
+        # Wait for Yui's response.
+        # thread_ts=sent_ts is required because Yui replies in-thread;
+        # conversations_history does not include thread replies, so we use conversations_replies.
         responses = wait_for_yui_response(YUI_TEST_CHANNEL, sent_ts, thread_ts=sent_ts)
         
         assert len(responses) > 0, f"Yui did not respond within {MAX_WAIT}s"
@@ -396,7 +398,8 @@ class TestIT09KiroDelegation:
         assert result["ok"]
         sent_ts = result["ts"]
         
-        # Kiro delegation takes longer
+        # Kiro delegation takes longer.
+        # thread_ts=sent_ts: Yui replies in-thread, use conversations_replies to detect response.
         responses = wait_for_yui_response(YUI_TEST_CHANNEL, sent_ts, thread_ts=sent_ts, max_wait=180)
         assert len(responses) > 0, "Yui did not respond (Kiro delegation may have timed out)"
         
