@@ -151,20 +151,31 @@ def memory_store(key: str, value: str, category: str = "general", max_retries: i
             import uuid
             client = _get_memory_client()
             # Create or get memory store (idempotent)
-            memory_info = client.create_or_get_memory(
-                name="yui-agent-memory",
-                description="YUI Agent long-term memory store",
-            )
-            memory_id = memory_info["memoryId"]
-            actor_id = "yui-agent"
+            try:
+                memory_info = client.create_or_get_memory(
+                    name="yui_agent_memory",
+                    description="YUI Agent long-term memory store",
+                )
+                memory_id = memory_info["memoryId"]
+            except Exception as me:
+                if "already exists" in str(me):
+                    memories = client.list_memories()
+                    mem = next((m for m in memories if m.get("name") == "yui_agent_memory"), None)
+                    if mem:
+                        memory_id = mem["memoryId"]
+                    else:
+                        raise
+                else:
+                    raise
+            actor_id = "yui_agent"
             session_id = str(uuid.uuid4())
             # Store as an event with the key-value as a message pair
             client.create_event(
                 memory_id=memory_id,
                 actor_id=actor_id,
                 session_id=session_id,
-                messages=[("user", f"Remember: {key} = {value} (category: {category})")],
-                metadata={"key": {"value": key}, "category": {"value": category}},
+                messages=[(f"store: {key} = {value} (category: {category})", "USER")],
+                metadata={"key": {"stringValue": key}, "category": {"stringValue": category}},
             )
             logger.info("Memory stored: %s=%s (category: %s)", key, value[:50], category)
             return f"Stored memory '{key}' in category '{category}'"
@@ -217,11 +228,22 @@ def memory_recall(query: str, limit: int = 5, max_retries: int = 2) -> str:
         try:
             client = _get_memory_client()
             # Create or get memory store (idempotent)
-            memory_info = client.create_or_get_memory(
-                name="yui-agent-memory",
-                description="YUI Agent long-term memory store",
-            )
-            memory_id = memory_info["memoryId"]
+            try:
+                memory_info = client.create_or_get_memory(
+                    name="yui_agent_memory",
+                    description="YUI Agent long-term memory store",
+                )
+                memory_id = memory_info["memoryId"]
+            except Exception as me:
+                if "already exists" in str(me):
+                    memories = client.list_memories()
+                    mem = next((m for m in memories if m.get("name") == "yui_agent_memory"), None)
+                    if mem:
+                        memory_id = mem["memoryId"]
+                    else:
+                        raise
+                else:
+                    raise
             results = client.retrieve_memories(
                 memory_id=memory_id,
                 namespace="DEFAULT",
