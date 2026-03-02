@@ -75,25 +75,38 @@ def web_browse(url: str, task: str = "extract main content", timeout: int = 30) 
         )
 
     session_id = None
+    _browse_result = None
     try:
-        with browser_session(region=_REGION) as browser:
-            session_id = browser.session_id
-            logger.info("Browser session started: %s", session_id)
+        browser_identifier = os.environ.get("YUI_AGENTCORE_BROWSER_ID") or None
+        try:
+            with browser_session(region=_REGION, identifier=browser_identifier) as browser:
+                session_id = browser.session_id
+                logger.info("Browser session started: %s (identifier: %s)", session_id, browser_identifier)
 
-            try:
-                ws_url, ws_headers = browser.generate_ws_headers()
-                with sync_playwright() as p:
-                    b = p.chromium.connect_over_cdp(ws_url, headers=ws_headers)
-                    try:
-                        page = b.contexts[0].pages[0] if b.contexts and b.contexts[0].pages else b.new_page()
-                        page.goto(url, timeout=timeout * 1000)
-                        content_text = page.content()
-                    finally:
-                        b.close()
-                return content_text[:5000] if content_text else "(no content)"
-            except Exception as inner_e:
-                logger.error("Browser automation error (session: %s): %s", session_id, inner_e)
-                return f"Error browsing {url}: {inner_e}"
+                try:
+                    ws_url, ws_headers = browser.generate_ws_headers()
+                    with sync_playwright() as p:
+                        b = p.chromium.connect_over_cdp(ws_url, headers=ws_headers)
+                        try:
+                            page = b.contexts[0].pages[0] if b.contexts and b.contexts[0].pages else b.new_page()
+                            page.goto(url, timeout=timeout * 1000)
+                            content_text = page.content()
+                        finally:
+                            b.close()
+                    _browse_result = content_text[:5000] if content_text else "(no content)"
+                except Exception as inner_e:
+                    logger.error("Browser automation error (session: %s): %s", session_id, inner_e)
+                    _browse_result = f"Error browsing {url}: {inner_e}"
+        except Exception as ctx_e:
+            # StopBrowserSession may fail with AccessDeniedException even when browse succeeded
+            if _browse_result is not None:
+                err_msg = str(ctx_e)
+                if "StopBrowserSession" in err_msg or "AccessDeniedException" in err_msg:
+                    logger.warning("Browser session cleanup failed (result already obtained): %s", ctx_e)
+                else:
+                    raise
+        if _browse_result is not None:
+            return _browse_result
 
     except Exception as e:
         error_msg = str(e)
@@ -319,8 +332,31 @@ def code_execute(code: str, language: str = "python", timeout: int = 60) -> str:
             try:
                 result = interpreter.execute_code(code=code, language=language)
 
-                stdout = result.get("stdout", "")
-                stderr = result.get("stderr", "")
+                # SDK returns EventStream in result["stream"]
+                # Each event: {"result": {"structuredContent": {"stdout": ..., "stderr": ..., "exitCode": ...}}}
+                stream = result.get("stream")
+                stdout_parts = []
+                stderr_parts = []
+                if stream:
+                    for event in stream:
+                        evt_result = event.get("result", {})
+                        structured = evt_result.get("structuredContent", {})
+                        if structured.get("stdout"):
+                            stdout_parts.append(structured["stdout"])
+                        if structured.get("stderr"):
+                            stderr_parts.append(structured["stderr"])
+                        # Fallback: content array
+                        for content_item in evt_result.get("content", []):
+                            if content_item.get("type") == "text" and content_item.get("text"):
+                                if not structured:
+                                    stdout_parts.append(content_item["text"])
+                else:
+                    # Fallback for direct dict response
+                    stdout_parts.append(result.get("stdout", ""))
+                    stderr_parts.append(result.get("stderr", ""))
+
+                stdout = "\n".join(filter(None, stdout_parts))
+                stderr = "\n".join(filter(None, stderr_parts))
                 output = stdout
                 if stderr:
                     output += f"\nSTDERR: {stderr}"
@@ -497,9 +533,10 @@ def web_search(query: str, num_results: int = 10, timeout: int = 30) -> str:
         encoded_query = urllib.parse.quote_plus(query.strip())
         search_url = f"https://www.google.com/search?q={encoded_query}&num={num_results}"
         
-        with browser_session(region=_REGION) as browser:
+        browser_identifier = os.environ.get("YUI_AGENTCORE_BROWSER_ID") or None
+        with browser_session(region=_REGION, identifier=browser_identifier) as browser:
             session_id = browser.session_id
-            logger.info("Browser session started for search: %s", session_id)
+            logger.info("Browser session started for search: %s (identifier: %s)", session_id, browser_identifier)
 
             try:
                 ws_url, ws_headers = browser.generate_ws_headers()
