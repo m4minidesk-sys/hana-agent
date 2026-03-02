@@ -105,6 +105,9 @@ def web_browse(url: str, task: str = "extract main content", timeout: int = 30) 
                     logger.warning("Browser session cleanup failed (result already obtained): %s", ctx_e)
                 else:
                     raise
+            else:
+                # No result obtained yet (e.g. __enter__ failed) — propagate to outer handler
+                raise
         if _browse_result is not None:
             return _browse_result
 
