@@ -62,18 +62,20 @@ def _get_secrets() -> dict[str, str]:
         raw = response["SecretString"]
         _secrets_cache = json.loads(raw)
         return _secrets_cache
-    except client.exceptions.ResourceNotFoundException as e:
-        logger.error("Secrets not found: %s", e)
-        raise RuntimeError(f"Secret not found: {secrets_arn}") from e
-    except client.exceptions.AccessDeniedException as e:
-        logger.error("Secrets access denied: %s", e)
-        raise RuntimeError(f"Access denied to secret: {secrets_arn}") from e
-    except json.JSONDecodeError as e:
-        logger.error("Malformed secret JSON: %s", e)
-        raise
-    except Exception as e:  # network timeout etc.
-        logger.error("Failed to get secrets: %s", e)
-        raise RuntimeError(f"Secrets retrieval error: {e}") from e
+    except client.exceptions.ResourceNotFoundException:
+        # ARNや詳細をログに出力しない（情報漏洩防止）
+        logger.error("Secrets retrieval failed: secret not found")
+        raise RuntimeError("Secrets retrieval failed: secret not found") from None
+    except client.exceptions.AccessDeniedException:
+        logger.error("Secrets retrieval failed: access denied")
+        raise RuntimeError("Secrets retrieval failed: access denied") from None
+    except json.JSONDecodeError:
+        logger.error("Secrets retrieval failed: malformed secret JSON")
+        raise RuntimeError("Secrets retrieval failed: malformed JSON") from None
+    except Exception:
+        # network timeout など — 詳細をログに残しつつ外部には漏らさない
+        logger.exception("Secrets retrieval failed: unexpected error")
+        raise RuntimeError("Secrets retrieval failed: internal error") from None
 
 
 # ── Slack 署名検証 ────────────────────────────────────────────────────────────
@@ -103,10 +105,12 @@ def _verify_slack_signature(headers: dict[str, str], body: str) -> bool:
     if not sig or not ts:
         return False
 
-    # リプレイアタック防止: タイムスタンプが5分以上古い場合は拒否
+    # リプレイアタック防止: タイムスタンプが60秒以上古い場合は拒否
     try:
-        if abs(time.time() - int(ts)) > 300:
-            logger.warning("Stale timestamp: %s", ts)
+        ts_int = int(ts)
+        delta = abs(time.time() - ts_int)
+        if delta > 60:
+            logger.warning("Stale or future timestamp rejected (delta=%.1fs)", delta)
             return False
     except ValueError:
         return False
